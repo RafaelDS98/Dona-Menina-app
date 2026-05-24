@@ -53,12 +53,6 @@ app.use((err, req, res, next) => {
   res.status(500).json({ ok: false, error: 'Erro interno do servidor' });
 });
 
-// Inicializar banco antes de subir o servidor
 initSchema().then(() => {
   app.listen(PORT, () => {
-    console.log(`Dona Menina API rodando na porta ${PORT}`);
-  });
-}).catch(err => {
-  console.error('Falha ao conectar ao banco:', err);
-  process.exit(1);
-});
+    console.log(`Dona
