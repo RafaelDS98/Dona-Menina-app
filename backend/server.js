@@ -1,9 +1,7 @@
 import express from 'express';
 import cors from 'cors';
-import { join } from 'path';
-import db from './database/db.js';
+import { initSchema } from './database/db.js';
 
-// Import routes
 import clientesRouter from './routes/clientes.js';
 import colaboradorasRouter from './routes/colaboradoras.js';
 import servicosRouter from './routes/servicos.js';
@@ -22,7 +20,6 @@ import marketingRouter from './routes/marketing.js';
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-// Middleware
 app.use(cors({
   origin: [
     'http://localhost:3000',
@@ -32,7 +29,6 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Routes
 app.use('/api/clientes', clientesRouter);
 app.use('/api/colaboradoras', colaboradorasRouter);
 app.use('/api/servicos', servicosRouter);
@@ -48,26 +44,21 @@ app.use('/api/configuracoes', configuracoesRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/marketing', marketingRouter);
 
-// Health check
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, data: { status: 'running' } });
 });
 
-// Servir frontend buildado (Electron ou produção sem Docker)
-if (process.env.STATIC_DIR) {
-  app.use(express.static(process.env.STATIC_DIR));
-  app.get('/{*splat}', (req, res, next) => {
-    if (req.path.startsWith('/api')) return next();
-    res.sendFile(join(process.env.STATIC_DIR, 'index.html'));
-  });
-}
-
-// Error handler (Express 5 catches async errors automatically)
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ ok: false, error: 'Erro interno do servidor' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Dona Menina API rodando na porta ${PORT}`);
+// Inicializar banco antes de subir o servidor
+initSchema().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Dona Menina API rodando na porta ${PORT}`);
+  });
+}).catch(err => {
+  console.error('Falha ao conectar ao banco:', err);
+  process.exit(1);
 });
