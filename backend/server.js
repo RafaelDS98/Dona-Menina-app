@@ -23,7 +23,13 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'https://awake-delight-production-083e.up.railway.app'
+  ],
+  credentials: true
+}));
 app.use(express.json());
 
 // Routes
