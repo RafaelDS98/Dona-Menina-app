@@ -1,71 +1,58 @@
 import { Router } from 'express';
-import db from '../database/db.js';
+import pool from '../database/db.js';
 
 const router = Router();
 
-// GET /api/clientes/para-disparo?filtro=todas|recentes|inativas|aniversariantes
-router.get('/disparo', (req, res) => {
-  const { filtro = 'todas' } = req.query;
-  const hoje = new Date();
-  const mesAtual = String(hoje.getMonth() + 1).padStart(2, '0');
+router.get('/disparo', async (req, res) => {
+  try {
+    const { filtro = 'todas' } = req.query;
+    const hoje = new Date();
+    const mesAtual = String(hoje.getMonth() + 1).padStart(2, '0');
+    let result;
 
-  let query;
-  const params = [];
-
-  switch (filtro) {
-    case 'recentes': {
+    if (filtro === 'recentes') {
       const trintaDias = new Date(hoje.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      query = `
+      result = await pool.query(`
         SELECT DISTINCT c.id, c.nome, c.telefone, MAX(a.data_hora) as ultima_visita
-        FROM clientes c JOIN atendimentos a ON a.cliente_id = c.id
-        WHERE c.ativa = 1 AND c.telefone IS NOT NULL AND c.telefone != ''
-        AND a.cancelado = 0 AND DATE(a.data_hora) >= ?
+        FROM clientes c JOIN atendimentos a ON a.cliente_id=c.id
+        WHERE c.ativa=1 AND c.telefone IS NOT NULL AND c.telefone!=''
+        AND a.cancelado=0 AND DATE(a.data_hora)>=$1
         GROUP BY c.id ORDER BY c.nome
-      `;
-      params.push(trintaDias);
-      break;
-    }
-    case 'inativas': {
+      `, [trintaDias]);
+    } else if (filtro === 'inativas') {
       const sessentaDias = new Date(hoje.getTime() - 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      query = `
+      result = await pool.query(`
         SELECT c.id, c.nome, c.telefone, MAX(a.data_hora) as ultima_visita
-        FROM clientes c LEFT JOIN atendimentos a ON a.cliente_id = c.id AND a.cancelado = 0
-        WHERE c.ativa = 1 AND c.telefone IS NOT NULL AND c.telefone != ''
-        GROUP BY c.id HAVING ultima_visita IS NULL OR DATE(ultima_visita) < ?
+        FROM clientes c LEFT JOIN atendimentos a ON a.cliente_id=c.id AND a.cancelado=0
+        WHERE c.ativa=1 AND c.telefone IS NOT NULL AND c.telefone!=''
+        GROUP BY c.id HAVING MAX(a.data_hora) IS NULL OR DATE(MAX(a.data_hora)) < $1
         ORDER BY c.nome
-      `;
-      params.push(sessentaDias);
-      break;
-    }
-    case 'aniversariantes':
-      query = `
+      `, [sessentaDias]);
+    } else if (filtro === 'aniversariantes') {
+      result = await pool.query(`
         SELECT c.id, c.nome, c.telefone, c.data_nascimento,
-          (SELECT MAX(a.data_hora) FROM atendimentos a WHERE a.cliente_id = c.id AND a.cancelado = 0) as ultima_visita
+          (SELECT MAX(a.data_hora) FROM atendimentos a WHERE a.cliente_id=c.id AND a.cancelado=0) as ultima_visita
         FROM clientes c
-        WHERE c.ativa = 1 AND c.telefone IS NOT NULL AND c.telefone != ''
-        AND SUBSTR(c.data_nascimento, 6, 2) = ?
+        WHERE c.ativa=1 AND c.telefone IS NOT NULL AND c.telefone!=''
+        AND SUBSTRING(c.data_nascimento FROM 6 FOR 2) = $1
         ORDER BY c.nome
-      `;
-      params.push(mesAtual);
-      break;
-    default:
-      query = `
+      `, [mesAtual]);
+    } else {
+      result = await pool.query(`
         SELECT c.id, c.nome, c.telefone,
-          (SELECT MAX(a.data_hora) FROM atendimentos a WHERE a.cliente_id = c.id AND a.cancelado = 0) as ultima_visita
+          (SELECT MAX(a.data_hora) FROM atendimentos a WHERE a.cliente_id=c.id AND a.cancelado=0) as ultima_visita
         FROM clientes c
-        WHERE c.ativa = 1 AND c.telefone IS NOT NULL AND c.telefone != ''
+        WHERE c.ativa=1 AND c.telefone IS NOT NULL AND c.telefone!=''
         ORDER BY c.nome
-      `;
-  }
+      `);
+    }
 
-  const clientes = db.prepare(query).all(...params);
-
-  const result = clientes.map(c => ({
-    ...c,
-    telefone_limpo: c.telefone ? '55' + c.telefone.replace(/\D/g, '') : null,
-  }));
-
-  res.json({ ok: true, data: result });
+    const data = result.rows.map(c => ({
+      ...c,
+      telefone_limpo: c.telefone ? '55' + c.telefone.replace(/\D/g, '') : null,
+    }));
+    res.json({ ok: true, data });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 export default router;

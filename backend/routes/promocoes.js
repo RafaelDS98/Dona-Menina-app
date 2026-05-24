@@ -1,95 +1,97 @@
 import { Router } from 'express';
-import db from '../database/db.js';
+import pool from '../database/db.js';
 
 const router = Router();
 
-router.get('/', (req, res) => {
-  const { ativas } = req.query;
-  let promocoes;
-  if (ativas === 'true') {
-    const hoje = new Date().toISOString().split('T')[0];
-    promocoes = db.prepare(`
-      SELECT * FROM promocoes WHERE ativa = 1 AND data_inicio <= ? AND data_fim >= ? ORDER BY nome
-    `).all(hoje, hoje);
-  } else {
-    promocoes = db.prepare('SELECT * FROM promocoes ORDER BY data_fim DESC').all();
-  }
+router.get('/', async (req, res) => {
+  try {
+    const { ativas } = req.query;
+    let promoResult;
+    if (ativas === 'true') {
+      const hoje = new Date().toISOString().split('T')[0];
+      promoResult = await pool.query('SELECT * FROM promocoes WHERE ativa=1 AND data_inicio<=$1 AND data_fim>=$2 ORDER BY nome', [hoje, hoje]);
+    } else {
+      promoResult = await pool.query('SELECT * FROM promocoes ORDER BY data_fim DESC');
+    }
+    const result = [];
+    for (const p of promoResult.rows) {
+      const servicos = await pool.query(`
+        SELECT s.id, s.nome, s.preco FROM promocao_servicos ps
+        JOIN servicos s ON s.id=ps.servico_id WHERE ps.promocao_id=$1
+      `, [p.id]);
+      result.push({ ...p, servicos: servicos.rows });
+    }
+    res.json({ ok: true, data: result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
 
-  // Attach services for each promotion
-  const result = promocoes.map(p => {
-    const servicos = db.prepare(`
+router.get('/:id', async (req, res) => {
+  try {
+    const promo = await pool.query('SELECT * FROM promocoes WHERE id=$1', [req.params.id]);
+    if (!promo.rows[0]) return res.status(404).json({ ok: false, error: 'Promocao nao encontrada' });
+    const servicos = await pool.query(`
       SELECT s.id, s.nome, s.preco FROM promocao_servicos ps
-      JOIN servicos s ON s.id = ps.servico_id WHERE ps.promocao_id = ?
-    `).all(p.id);
-    return { ...p, servicos };
-  });
-
-  res.json({ ok: true, data: result });
+      JOIN servicos s ON s.id=ps.servico_id WHERE ps.promocao_id=$1
+    `, [req.params.id]);
+    res.json({ ok: true, data: { ...promo.rows[0], servicos: servicos.rows } });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-router.get('/:id', (req, res) => {
-  const promo = db.prepare('SELECT * FROM promocoes WHERE id = ?').get(req.params.id);
-  if (!promo) return res.status(404).json({ ok: false, error: 'Promocao nao encontrada' });
-
-  const servicos = db.prepare(`
-    SELECT s.id, s.nome, s.preco FROM promocao_servicos ps
-    JOIN servicos s ON s.id = ps.servico_id WHERE ps.promocao_id = ?
-  `).all(promo.id);
-
-  res.json({ ok: true, data: { ...promo, servicos } });
-});
-
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { nome, descricao, preco, data_inicio, data_fim, servico_ids } = req.body;
-  if (!nome || !preco || !data_inicio || !data_fim) {
+  if (!nome || !preco || !data_inicio || !data_fim)
     return res.status(400).json({ ok: false, error: 'nome, preco, data_inicio e data_fim sao obrigatorios' });
-  }
-
-  const createPromo = db.transaction(() => {
-    const result = db.prepare(
-      'INSERT INTO promocoes (nome, descricao, preco, data_inicio, data_fim) VALUES (?, ?, ?, ?, ?)'
-    ).run(nome, descricao || null, preco, data_inicio, data_fim);
-
-    if (servico_ids && servico_ids.length > 0) {
-      const insert = db.prepare('INSERT INTO promocao_servicos (promocao_id, servico_id) VALUES (?, ?)');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      'INSERT INTO promocoes (nome, descricao, preco, data_inicio, data_fim) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+      [nome, descricao || null, preco, data_inicio, data_fim]
+    );
+    const id = result.rows[0].id;
+    if (servico_ids?.length) {
       for (const sid of servico_ids) {
-        insert.run(result.lastInsertRowid, sid);
+        await client.query('INSERT INTO promocao_servicos (promocao_id, servico_id) VALUES ($1,$2)', [id, sid]);
       }
     }
-    return result.lastInsertRowid;
-  });
-
-  const id = createPromo();
-  const promo = db.prepare('SELECT * FROM promocoes WHERE id = ?').get(id);
-  res.status(201).json({ ok: true, data: promo });
+    await client.query('COMMIT');
+    const promo = await pool.query('SELECT * FROM promocoes WHERE id=$1', [id]);
+    res.status(201).json({ ok: true, data: promo.rows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ ok: false, error: e.message });
+  } finally { client.release(); }
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   const { nome, descricao, preco, data_inicio, data_fim, ativa, servico_ids } = req.body;
-
-  const updatePromo = db.transaction(() => {
-    db.prepare(`
-      UPDATE promocoes SET nome = ?, descricao = ?, preco = ?, data_inicio = ?, data_fim = ?, ativa = ?
-      WHERE id = ?
-    `).run(nome, descricao || null, preco, data_inicio, data_fim, ativa !== undefined ? ativa : 1, req.params.id);
-
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      'UPDATE promocoes SET nome=$1, descricao=$2, preco=$3, data_inicio=$4, data_fim=$5, ativa=$6 WHERE id=$7',
+      [nome, descricao || null, preco, data_inicio, data_fim, ativa !== undefined ? ativa : 1, req.params.id]
+    );
     if (servico_ids) {
-      db.prepare('DELETE FROM promocao_servicos WHERE promocao_id = ?').run(req.params.id);
-      const insert = db.prepare('INSERT INTO promocao_servicos (promocao_id, servico_id) VALUES (?, ?)');
+      await client.query('DELETE FROM promocao_servicos WHERE promocao_id=$1', [req.params.id]);
       for (const sid of servico_ids) {
-        insert.run(req.params.id, sid);
+        await client.query('INSERT INTO promocao_servicos (promocao_id, servico_id) VALUES ($1,$2)', [req.params.id, sid]);
       }
     }
-  });
-
-  updatePromo();
-  const promo = db.prepare('SELECT * FROM promocoes WHERE id = ?').get(req.params.id);
-  res.json({ ok: true, data: promo });
+    await client.query('COMMIT');
+    const promo = await pool.query('SELECT * FROM promocoes WHERE id=$1', [req.params.id]);
+    res.json({ ok: true, data: promo.rows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ ok: false, error: e.message });
+  } finally { client.release(); }
 });
 
-router.delete('/:id', (req, res) => {
-  db.prepare('DELETE FROM promocoes WHERE id = ?').run(req.params.id);
-  res.json({ ok: true, data: null });
+router.delete('/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM promocoes WHERE id=$1', [req.params.id]);
+    res.json({ ok: true, data: null });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 export default router;

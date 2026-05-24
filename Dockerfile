@@ -1,18 +1,13 @@
 FROM node:20-alpine
 
-WORKDIR /app
+WORKDIR /app/backend
 
-# Copia tudo
-COPY "Dona Menina v1.3/backend/package.json" "Dona Menina v1.3/backend/package-lock.json" ./backend/
+COPY backend/package.json backend/package-lock.json* ./
 
-RUN cd backend && npm install --production
+RUN npm install --production
 
-COPY "Dona Menina v1.3/backend/" ./backend/
-
-COPY "Dona Menina v1.3/data/" ./data/
+COPY backend/ ./
 
 EXPOSE 4000
-
-WORKDIR /app/backend
 
 CMD ["npm", "start"]

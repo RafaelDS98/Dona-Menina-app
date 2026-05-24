@@ -1,112 +1,101 @@
 import { Router } from 'express';
-import db from '../database/db.js';
+import pool from '../database/db.js';
 
 const router = Router();
 
-// GET /api/financeiro/resumo?data_inicio=&data_fim=
-router.get('/resumo', (req, res) => {
-  const { data_inicio, data_fim } = req.query;
-  if (!data_inicio || !data_fim) {
-    return res.status(400).json({ ok: false, error: 'data_inicio e data_fim sao obrigatorios' });
-  }
-
-  const receita = db.prepare(`
-    SELECT COUNT(*) as total_atendimentos, COALESCE(SUM(valor_total), 0) as faturamento_bruto
-    FROM atendimentos WHERE cancelado = 0 AND status = 'concluida' AND DATE(data_hora) BETWEEN ? AND ?
-  `).get(data_inicio, data_fim);
-
-  const despesas = db.prepare(`
-    SELECT COALESCE(SUM(valor_total), 0) as total_saidas
-    FROM saidas WHERE DATE(data) BETWEEN ? AND ?
-  `).get(data_inicio, data_fim);
-
-  res.json({
-    ok: true,
-    data: {
-      total_atendimentos: receita.total_atendimentos,
-      faturamento_bruto: receita.faturamento_bruto, // TODO: exibir apenas para perfil Administrador (a implementar futuramente)
-      total_saidas: despesas.total_saidas,
-      saldo: receita.faturamento_bruto - despesas.total_saidas, // TODO: exibir apenas para perfil Administrador (a implementar futuramente)
-    },
-  });
+router.get('/resumo', async (req, res) => {
+  try {
+    const { data_inicio, data_fim } = req.query;
+    if (!data_inicio || !data_fim) return res.status(400).json({ ok: false, error: 'data_inicio e data_fim sao obrigatorios' });
+    const receita = await pool.query(`
+      SELECT COUNT(*) as total_atendimentos, COALESCE(SUM(valor_total),0) as faturamento_bruto
+      FROM atendimentos WHERE cancelado=0 AND status='concluida' AND DATE(data_hora) BETWEEN $1 AND $2
+    `, [data_inicio, data_fim]);
+    const despesas = await pool.query(`
+      SELECT COALESCE(SUM(valor_total),0) as total_saidas FROM saidas WHERE DATE(data) BETWEEN $1 AND $2
+    `, [data_inicio, data_fim]);
+    const r = receita.rows[0];
+    res.json({ ok: true, data: {
+      total_atendimentos: parseInt(r.total_atendimentos),
+      faturamento_bruto: parseFloat(r.faturamento_bruto),
+      total_saidas: parseFloat(despesas.rows[0].total_saidas),
+      saldo: parseFloat(r.faturamento_bruto) - parseFloat(despesas.rows[0].total_saidas),
+    }});
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-// GET /api/financeiro/por-servico?data_inicio=&data_fim=
-router.get('/por-servico', (req, res) => {
-  const { data_inicio, data_fim } = req.query;
-  const result = db.prepare(`
-    SELECT ai.descricao as servico, COUNT(*) as quantidade, SUM(ai.preco_cobrado) as valor_total
-    FROM atendimento_itens ai
-    JOIN atendimentos a ON a.id = ai.atendimento_id
-    WHERE a.cancelado = 0 AND ai.tipo = 'servico' AND DATE(a.data_hora) BETWEEN ? AND ?
-    GROUP BY ai.descricao ORDER BY quantidade DESC
-  `).all(data_inicio, data_fim);
-  res.json({ ok: true, data: result });
+router.get('/por-servico', async (req, res) => {
+  try {
+    const { data_inicio, data_fim } = req.query;
+    const result = await pool.query(`
+      SELECT ai.descricao as servico, COUNT(*) as quantidade, SUM(ai.preco_cobrado) as valor_total
+      FROM atendimento_itens ai JOIN atendimentos a ON a.id=ai.atendimento_id
+      WHERE a.cancelado=0 AND ai.tipo='servico' AND DATE(a.data_hora) BETWEEN $1 AND $2
+      GROUP BY ai.descricao ORDER BY quantidade DESC
+    `, [data_inicio, data_fim]);
+    res.json({ ok: true, data: result.rows });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-// GET /api/financeiro/por-forma-pagamento?data_inicio=&data_fim=
-router.get('/por-forma-pagamento', (req, res) => {
-  const { data_inicio, data_fim } = req.query;
-  const result = db.prepare(`
-    SELECT ap.forma, SUM(ap.valor) as valor_total
-    FROM atendimento_pagamentos ap
-    JOIN atendimentos a ON a.id = ap.atendimento_id
-    WHERE a.cancelado = 0 AND DATE(a.data_hora) BETWEEN ? AND ?
-    AND ap.forma != 'desconto_taxa'
-    GROUP BY ap.forma
-  `).all(data_inicio, data_fim);
-  res.json({ ok: true, data: result });
+router.get('/por-forma-pagamento', async (req, res) => {
+  try {
+    const { data_inicio, data_fim } = req.query;
+    const result = await pool.query(`
+      SELECT ap.forma, SUM(ap.valor) as valor_total
+      FROM atendimento_pagamentos ap JOIN atendimentos a ON a.id=ap.atendimento_id
+      WHERE a.cancelado=0 AND DATE(a.data_hora) BETWEEN $1 AND $2 AND ap.forma != 'desconto_taxa'
+      GROUP BY ap.forma
+    `, [data_inicio, data_fim]);
+    res.json({ ok: true, data: result.rows });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-// GET /api/financeiro/saidas?data_inicio=&data_fim=
-router.get('/saidas', (req, res) => {
-  const { data_inicio, data_fim } = req.query;
-  let saidas;
-  if (data_inicio && data_fim) {
-    saidas = db.prepare('SELECT * FROM saidas WHERE DATE(data) BETWEEN ? AND ? ORDER BY data DESC').all(data_inicio, data_fim);
-  } else {
-    saidas = db.prepare('SELECT * FROM saidas ORDER BY data DESC LIMIT 50').all();
-  }
-  res.json({ ok: true, data: saidas });
+router.get('/por-colaboradora', async (req, res) => {
+  try {
+    const { data_inicio, data_fim } = req.query;
+    const result = await pool.query(`
+      SELECT col.nome as colaboradora, COUNT(DISTINCT a.id) as total_atendimentos, SUM(ai.preco_cobrado) as faturamento
+      FROM atendimento_item_colaboradoras aic
+      JOIN colaboradoras col ON col.id=aic.colaboradora_id
+      JOIN atendimento_itens ai ON ai.id=aic.atendimento_item_id
+      JOIN atendimentos a ON a.id=ai.atendimento_id
+      WHERE a.cancelado=0 AND DATE(a.data_hora) BETWEEN $1 AND $2
+      GROUP BY col.nome ORDER BY faturamento DESC
+    `, [data_inicio, data_fim]);
+    res.json({ ok: true, data: result.rows });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-// POST /api/financeiro/saidas
-router.post('/saidas', (req, res) => {
-  const { data, descricao, marca, valor_unit, quantidade, fornecedor } = req.body;
-  if (!data || !descricao || !valor_unit) {
-    return res.status(400).json({ ok: false, error: 'data, descricao e valor_unit sao obrigatorios' });
-  }
-  const qty = quantidade || 1;
-  const valorTotal = valor_unit * qty;
-
-  const result = db.prepare(`
-    INSERT INTO saidas (data, descricao, marca, valor_unit, quantidade, valor_total, fornecedor)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(data, descricao, marca || null, valor_unit, qty, valorTotal, fornecedor || null);
-
-  const saida = db.prepare('SELECT * FROM saidas WHERE id = ?').get(result.lastInsertRowid);
-  res.status(201).json({ ok: true, data: saida });
+router.get('/saidas', async (req, res) => {
+  try {
+    const { data_inicio, data_fim } = req.query;
+    const result = await pool.query(
+      'SELECT * FROM saidas WHERE DATE(data) BETWEEN $1 AND $2 ORDER BY data DESC',
+      [data_inicio, data_fim]
+    );
+    res.json({ ok: true, data: result.rows });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-// PUT /api/financeiro/saidas/:id
-router.put('/saidas/:id', (req, res) => {
-  const { data, descricao, marca, valor_unit, quantidade, fornecedor } = req.body;
-  const qty = quantidade || 1;
-  const valorTotal = valor_unit * qty;
-
-  db.prepare(`
-    UPDATE saidas SET data = ?, descricao = ?, marca = ?, valor_unit = ?, quantidade = ?,
-    valor_total = ?, fornecedor = ? WHERE id = ?
-  `).run(data, descricao, marca || null, valor_unit, qty, valorTotal, fornecedor || null, req.params.id);
-
-  const saida = db.prepare('SELECT * FROM saidas WHERE id = ?').get(req.params.id);
-  res.json({ ok: true, data: saida });
+router.post('/saidas', async (req, res) => {
+  try {
+    const { data, descricao, marca, valor_unit, quantidade, fornecedor } = req.body;
+    if (!data || !descricao || !valor_unit) return res.status(400).json({ ok: false, error: 'data, descricao e valor_unit sao obrigatorios' });
+    const qty = quantidade || 1;
+    const total = Number(valor_unit) * Number(qty);
+    const result = await pool.query(
+      'INSERT INTO saidas (data, descricao, marca, valor_unit, quantidade, valor_total, fornecedor) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+      [data, descricao, marca || null, valor_unit, qty, total, fornecedor || null]
+    );
+    res.status(201).json({ ok: true, data: result.rows[0] });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-// DELETE /api/financeiro/saidas/:id
-router.delete('/saidas/:id', (req, res) => {
-  db.prepare('DELETE FROM saidas WHERE id = ?').run(req.params.id);
-  res.json({ ok: true, data: null });
+router.delete('/saidas/:id', async (req, res) => {
+  try {
+    await pool.query('DELETE FROM saidas WHERE id=$1', [req.params.id]);
+    res.json({ ok: true, data: null });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 export default router;
