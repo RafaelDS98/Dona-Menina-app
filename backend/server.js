@@ -33,4 +33,11 @@ app.use('/api/backup', backupRouter);
 app.use('/api/configuracoes', configuracoesRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/marketing', marketingRouter);
-app.get('/api/health', (req, res) => res.json({ ok: true, data: { stat
+app.get('/api/health', (req, res) => res.json({ ok: true, data: { status: 'running' } }));
+app.use((err, req, res, next) => { console.error(err.stack); res.status(500).json({ ok: false, error: 'Erro interno' }); });
+initSchema().then(() => {
+  app.listen(PORT, () => console.log(`Dona Menina API porta ${PORT}`));
+}).catch(err => {
+  console.error('Falha banco:', err);
+  process.exit(1);
+});
