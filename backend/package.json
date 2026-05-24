@@ -1,0 +1,14 @@
+{
+  "name": "dona-menina-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "latest",
+    "cors": "latest",
+    "express": "latest"
+  }
+}

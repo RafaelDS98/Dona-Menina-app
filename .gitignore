@@ -1,0 +1,7 @@
+node_modules/
+.DS_Store
+data/dona_menina.db
+data/backups/*.zip
+dist/
+release/
+*.exe

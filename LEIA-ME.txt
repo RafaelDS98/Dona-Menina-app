@@ -1,0 +1,90 @@
+# DONA MENINA Beauty Bar — Guia de Uso do Sistema
+
+---
+
+## PRIMEIRA VEZ (instalação em computador novo)
+
+1. Baixe o arquivo **dona-menina-v1.1.zip**
+2. Clique com o botão direito no arquivo zip → **Extrair tudo...**
+3. Escolha onde salvar (sugestão: `C:\Salão` ou `E:\Salão`)
+4. Abra a pasta extraída
+5. Clique com o botão direito em **INSTALAR.bat** → **Executar como administrador**
+6. Aguarde até aparecer "INSTALAÇÃO CONCLUÍDA" (pode levar de 5 a 15 minutos)
+7. Quando terminar, abra a pasta **scripts** dentro da pasta do projeto
+8. Dê **dois cliques** em **Abrir Dona Menina.bat**
+9. O sistema vai abrir no navegador automaticamente ✅
+
+---
+
+## COMO ABRIR O APP NO DIA A DIA
+
+1. Abra a pasta do projeto → pasta **scripts**
+2. Dê **dois cliques** em **Abrir Dona Menina.bat**
+3. Aguarde alguns segundos — o navegador abre sozinho com o sistema pronto
+
+> ⚠️ Não feche as janelas pretas que aparecem na barra de tarefas.
+> Elas são o "motor" do sistema. Se fechar, o app para de funcionar.
+
+---
+
+## COMO FECHAR O APP CORRETAMENTE
+
+1. Feche o navegador normalmente
+2. Na barra de tarefas (parte de baixo da tela), procure as janelas com o nome:
+   - **Dona Menina - Backend**
+   - **Dona Menina - Frontend**
+3. Clique com o botão direito em cada uma → **Fechar janela**
+
+> Ou simplesmente reinicie o computador — resolve também.
+
+---
+
+## COMO ATUALIZAR PARA UMA NOVA VERSÃO
+
+1. **Faça backup do banco de dados primeiro:**
+   - Vá até a pasta do projeto → pasta **data**
+   - Copie o arquivo **dona_menina.db** para um pendrive ou pasta segura
+
+2. Baixe o novo arquivo zip da versão atualizada
+3. Extraia em uma pasta diferente da anterior (ex: `C:\Salao-v1.2`)
+4. Copie o arquivo **dona_menina.db** do backup para a pasta **data** da nova versão
+5. Execute o **INSTALAR.bat** da nova versão como administrador
+6. Pronto — seus dados foram preservados e o sistema está atualizado ✅
+
+---
+
+## SE O APP NÃO ABRIR
+
+**O navegador abriu mas a tela está em branco ou com erro:**
+- Aguarde mais 10 segundos e atualize a página (tecla F5)
+- Se continuar, feche tudo e abra o **Abrir Dona Menina.bat** novamente
+
+**O navegador não abriu sozinho:**
+- Abra o Chrome ou Edge manualmente
+- Digite na barra de endereço: **localhost:3000**
+- Pressione Enter
+
+**Apareceu mensagem de erro em vermelho no app:**
+- Feche as janelas pretas da barra de tarefas
+- Abra o **Abrir Dona Menina.bat** novamente
+
+**Nada funciona:**
+- Reinicie o computador
+- Abra o **Abrir Dona Menina.bat** após reiniciar
+
+---
+
+## ONDE FICAM OS DADOS DO SISTEMA
+
+Todos os dados do salão (clientes, atendimentos, serviços) ficam salvos em:
+
+```
+pasta do projeto → data → dona_menina.db
+```
+
+> 💡 Recomendado: copie esse arquivo para um pendrive ou OneDrive
+> uma vez por semana como backup de segurança.
+
+---
+
+*Dona Menina Beauty Bar — Sistema de Gestão v1.1*
