@@ -1,16 +1,18 @@
-# Arquivo principal - aponta pro Dockerfile.backend
 FROM node:20-alpine
 
-WORKDIR /app/backend
+WORKDIR /app
 
-COPY backend/package.json backend/package-lock.json ./
+# Copia tudo
+COPY "Dona Menina v1.3/backend/package.json" "Dona Menina v1.3/backend/package-lock.json" ./backend/
 
-RUN npm install --production
+RUN cd backend && npm install --production
 
-COPY backend/ ./
+COPY "Dona Menina v1.3/backend/" ./backend/
 
-COPY data/ ../data/
+COPY "Dona Menina v1.3/data/" ./data/
 
 EXPOSE 4000
+
+WORKDIR /app/backend
 
 CMD ["npm", "start"]
