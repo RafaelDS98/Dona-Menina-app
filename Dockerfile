@@ -1,17 +1,13 @@
 FROM node:20-alpine
 
-WORKDIR /app
+WORKDIR /app/backend
 
-COPY backend/package.json ./backend/
-COPY backend/package-lock.json ./backend/
+COPY backend/package.json backend/package-lock.json* ./
 
-RUN cd backend && npm install --production
+RUN npm install --production
 
-COPY backend/ ./backend/
-COPY data/ ./data/
+COPY backend/ ./
 
 EXPOSE 4000
-
-WORKDIR /app/backend
 
 CMD ["npm", "start"]
