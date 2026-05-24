@@ -1,0 +1,24 @@
+# Receita 1: Backend (Node.js)
+# Começa com Node.js pré-instalado
+FROM node:20-alpine
+
+# Pasta onde o código vai ficar
+WORKDIR /app/backend
+
+# Copia tudo do backend
+COPY backend/package.json backend/package-lock.json ./
+
+# Instala os pacotes (npm install)
+RUN npm install --production
+
+# Copia todo o código do backend
+COPY backend/ ./
+
+# Copia o banco de dados também
+COPY data/ ../data/
+
+# Diz pro Railway qual porta usar
+EXPOSE 4000
+
+# Comando pra iniciar (npm start)
+CMD ["npm", "start"]
