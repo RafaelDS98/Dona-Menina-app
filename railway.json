@@ -2,11 +2,11 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "dockerfile",
-    "dockerfilePath": "/Dockerfile.frontend"
+    "dockerfilePath": "/Dockerfile"
   },
   "deploy": {
     "numReplicas": 1,
-    "startCommand": "nginx -g 'daemon off;'",
+    "startCommand": "node server.js",
     "restartPolicyCondition": "on-failure"
   }
 }
