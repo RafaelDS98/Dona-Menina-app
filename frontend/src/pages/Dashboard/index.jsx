@@ -7,12 +7,12 @@ function formatCurrency(value) {
   return Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
 }
 
+function localISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 const LABEL_FORMA = {
-  pix: 'PIX',
-  credito: 'Crédito',
-  debito: 'Débito',
-  especie: 'Dinheiro',
-  taxa: 'Taxa de agendamento',
+  pix: 'PIX', credito: 'Crédito', debito: 'Débito', especie: 'Dinheiro', taxa: 'Taxa de agendamento',
 };
 
 export default function Dashboard() {
@@ -21,23 +21,53 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [fechamentoAberto, setFechamentoAberto] = useState(false);
   const [carregandoFechamento, setCarregandoFechamento] = useState(false);
+  const [dataFechamento, setDataFechamento] = useState(localISO(new Date()));
+  const [fechamentoDados, setFechamentoDados] = useState(null);
+  const [carregandoDados, setCarregandoDados] = useState(false);
 
   useEffect(() => {
     api.get('/dashboard').then(setData).catch(console.error).finally(() => setLoading(false));
   }, []);
 
-  async function handleBaixarFechamento() {
-    setCarregandoFechamento(true);
+  async function buscarFechamento(dataStr) {
+    setCarregandoDados(true);
     try {
-      const _d = new Date();
-      const dataFormatada = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}`;
-      const dados = await api.get(`/fechamento?data=${dataFormatada}`);
-      baixarFechamento(dados);
-      toast.success('Fechamento baixado com sucesso!');
-    } catch (err) {
-      toast.error('Erro ao gerar fechamento: ' + err.message);
+      const dados = await api.get(`/fechamento?data=${dataStr}`);
+      setFechamentoDados(dados);
+    } catch {
+      toast.error('Erro ao buscar fechamento');
+      setFechamentoDados(null);
     } finally {
-      setCarregandoFechamento(false);
+      setCarregandoDados(false);
+    }
+  }
+
+  function handleToggleFechamento() {
+    const novoEstado = !fechamentoAberto;
+    setFechamentoAberto(novoEstado);
+    if (novoEstado) buscarFechamento(dataFechamento);
+  }
+
+  function handleDataChange(e) {
+    setDataFechamento(e.target.value);
+    if (fechamentoAberto) buscarFechamento(e.target.value);
+  }
+
+  async function handleBaixar() {
+    if (!fechamentoDados) {
+      setCarregandoFechamento(true);
+      try {
+        const dados = await api.get(`/fechamento?data=${dataFechamento}`);
+        baixarFechamento(dados);
+        toast.success('Fechamento baixado!');
+      } catch (err) {
+        toast.error('Erro ao gerar fechamento: ' + err.message);
+      } finally {
+        setCarregandoFechamento(false);
+      }
+    } else {
+      baixarFechamento(fechamentoDados);
+      toast.success('Fechamento baixado!');
     }
   }
 
@@ -45,6 +75,8 @@ export default function Dashboard() {
   if (!data) return <p className="text-red-500">Erro ao carregar dashboard</p>;
 
   const hoje = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+  const pagamentos = fechamentoDados?.totais_por_forma || [];
+  const totalFechamento = pagamentos.reduce((s, p) => s + (Number(p.total || p.valor) || 0), 0);
 
   return (
     <div>
@@ -63,42 +95,58 @@ export default function Dashboard() {
       )}
 
       <div className="bg-white rounded-lg shadow-sm border mb-4 overflow-hidden">
-        <div className="p-5 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-500 mb-1">Faturamento de hoje</p>
-            <p className="text-3xl font-bold text-primary">R$ {formatCurrency(data.faturamento_hoje)}</p>
-            <p className="text-xs text-gray-400 mt-1">
-              {data.total_atendimentos_hoje} atendimento{data.total_atendimentos_hoje !== 1 ? 's' : ''} realizado{data.total_atendimentos_hoje !== 1 ? 's' : ''}
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleBaixarFechamento}
-              disabled={carregandoFechamento}
-              className="px-4 py-2 text-sm text-white bg-primary rounded-lg hover:bg-primary-hover disabled:opacity-40 transition-colors"
-              title="Baixar fechamento do dia em arquivo TXT"
-            >
-              {carregandoFechamento ? 'Gerando...' : '⬇ Baixar'}
-            </button>
-            <button
-              onClick={() => setFechamentoAberto(v => !v)}
-              className="flex items-center gap-2 px-4 py-2 text-sm text-primary border border-primary rounded-lg hover:bg-primary-light transition-colors"
-            >
-              {fechamentoAberto ? 'Fechar' : 'Ver fechamento'}
-              <span className="text-xs">{fechamentoAberto ? '▲' : '▼'}</span>
-            </button>
+        <div className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm text-gray-500 mb-1">Faturamento de hoje</p>
+              <p className="text-3xl font-bold text-primary">R$ {formatCurrency(data.faturamento_hoje)}</p>
+              <p className="text-xs text-gray-400 mt-1">
+                {data.total_atendimentos_hoje} atendimento{data.total_atendimentos_hoje !== 1 ? 's' : ''} realizado{data.total_atendimentos_hoje !== 1 ? 's' : ''}
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <label className="text-xs text-gray-500 whitespace-nowrap">Data do fechamento:</label>
+                <input
+                  type="date"
+                  value={dataFechamento}
+                  onChange={handleDataChange}
+                  className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleBaixar}
+                  disabled={carregandoFechamento}
+                  className="px-4 py-2 text-sm text-white bg-primary rounded-lg hover:bg-primary-hover disabled:opacity-40 transition-colors"
+                >
+                  {carregandoFechamento ? 'Gerando...' : '⬇ Baixar'}
+                </button>
+                <button
+                  onClick={handleToggleFechamento}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-primary border border-primary rounded-lg hover:bg-primary-light transition-colors"
+                >
+                  {fechamentoAberto ? 'Fechar' : 'Ver fechamento'}
+                  <span className="text-xs">{fechamentoAberto ? '▲' : '▼'}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
         {fechamentoAberto && (
           <div className="border-t bg-gray-50 px-5 py-4">
-            <p className="text-sm font-semibold text-gray-700 mb-3">Fechamento do dia</p>
-            {!data.pagamentos_hoje || data.pagamentos_hoje.length === 0 ? (
-              <p className="text-sm text-gray-400">Nenhum pagamento registrado hoje.</p>
+            <p className="text-sm font-semibold text-gray-700 mb-3">
+              Fechamento — {new Date(dataFechamento + 'T00:00').toLocaleDateString('pt-BR')}
+            </p>
+            {carregandoDados ? (
+              <p className="text-sm text-gray-400">Carregando...</p>
+            ) : pagamentos.length === 0 ? (
+              <p className="text-sm text-gray-400">Nenhum pagamento registrado nesta data.</p>
             ) : (
               <div className="space-y-2">
-                {data.pagamentos_hoje.map(p => (
-                  <div key={p.forma} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-0">
+                {pagamentos.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-0">
                     <div className="flex items-center gap-2">
                       <span className={`w-2 h-2 rounded-full ${
                         p.forma === 'pix' ? 'bg-green-400' :
@@ -113,7 +161,7 @@ export default function Dashboard() {
                 ))}
                 <div className="flex items-center justify-between pt-2 mt-1">
                   <span className="text-sm font-bold text-gray-700">Total</span>
-                  <span className="text-sm font-bold text-primary">R$ {formatCurrency(data.faturamento_hoje)}</span>
+                  <span className="text-sm font-bold text-primary">R$ {formatCurrency(fechamentoDados?.total_dia || 0)}</span>
                 </div>
               </div>
             )}
@@ -145,15 +193,9 @@ export default function Dashboard() {
       </div>
 
       <div className="flex gap-3">
-        <a href="/atendimentos/novo" className="bg-primary text-white px-4 py-2 rounded-lg text-sm hover:bg-primary-hover transition-colors">
-          Nova comanda
-        </a>
-        <a href="/atendimentos" className="bg-white border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors">
-          Ver atendimentos
-        </a>
-        <a href="/agenda" className="bg-white border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors">
-          Ver agenda
-        </a>
+        <a href="/atendimentos/novo" className="bg-primary text-white px-4 py-2 rounded-lg text-sm hover:bg-primary-hover transition-colors">Nova comanda</a>
+        <a href="/atendimentos" className="bg-white border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors">Ver atendimentos</a>
+        <a href="/agenda" className="bg-white border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors">Ver agenda</a>
       </div>
     </div>
   );
