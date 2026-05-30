@@ -7,6 +7,10 @@ function formatCurrency(value) {
   return Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
 }
 
+function localISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 const LABEL_FORMA = {
   pix: 'PIX',
   credito: 'Crédito',
@@ -21,6 +25,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [fechamentoAberto, setFechamentoAberto] = useState(false);
   const [carregandoFechamento, setCarregandoFechamento] = useState(false);
+  const [dataFechamento, setDataFechamento] = useState(localISO(new Date()));
 
   useEffect(() => {
     api.get('/dashboard').then(setData).catch(console.error).finally(() => setLoading(false));
@@ -29,9 +34,7 @@ export default function Dashboard() {
   async function handleBaixarFechamento() {
     setCarregandoFechamento(true);
     try {
-      const _d = new Date();
-      const dataFormatada = `${_d.getFullYear()}-${String(_d.getMonth()+1).padStart(2,'0')}-${String(_d.getDate()).padStart(2,'0')}`;
-      const dados = await api.get(`/fechamento?data=${dataFormatada}`);
+      const dados = await api.get(`/fechamento?data=${dataFechamento}`);
       baixarFechamento(dados);
       toast.success('Fechamento baixado com sucesso!');
     } catch (err) {
@@ -71,22 +74,33 @@ export default function Dashboard() {
               {data.total_atendimentos_hoje} atendimento{data.total_atendimentos_hoje !== 1 ? 's' : ''} realizado{data.total_atendimentos_hoje !== 1 ? 's' : ''}
             </p>
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleBaixarFechamento}
-              disabled={carregandoFechamento}
-              className="px-4 py-2 text-sm text-white bg-primary rounded-lg hover:bg-primary-hover disabled:opacity-40 transition-colors"
-              title="Baixar fechamento do dia em arquivo TXT"
-            >
-              {carregandoFechamento ? 'Gerando...' : '⬇ Baixar'}
-            </button>
-            <button
-              onClick={() => setFechamentoAberto(v => !v)}
-              className="flex items-center gap-2 px-4 py-2 text-sm text-primary border border-primary rounded-lg hover:bg-primary-light transition-colors"
-            >
-              {fechamentoAberto ? 'Fechar' : 'Ver fechamento'}
-              <span className="text-xs">{fechamentoAberto ? '▲' : '▼'}</span>
-            </button>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-500">Escolher data do fechamento a ser gerado</label>
+              <input
+                type="date"
+                value={dataFechamento}
+                onChange={(e) => setDataFechamento(e.target.value)}
+                className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleBaixarFechamento}
+                disabled={carregandoFechamento}
+                className="px-4 py-2 text-sm text-white bg-primary rounded-lg hover:bg-primary-hover disabled:opacity-40 transition-colors"
+                title="Baixar fechamento do dia em arquivo TXT"
+              >
+                {carregandoFechamento ? 'Gerando...' : '⬇ Baixar'}
+              </button>
+              <button
+                onClick={() => setFechamentoAberto(v => !v)}
+                className="flex items-center gap-2 px-4 py-2 text-sm text-primary border border-primary rounded-lg hover:bg-primary-light transition-colors"
+              >
+                {fechamentoAberto ? 'Fechar' : 'Ver fechamento'}
+                <span className="text-xs">{fechamentoAberto ? '▲' : '▼'}</span>
+              </button>
+            </div>
           </div>
         </div>
 
