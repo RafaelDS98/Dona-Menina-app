@@ -26,12 +26,11 @@ export default function EditarAtendimento() {
   const [loading, setLoading] = useState(true);
   const [salvando, setSalvando] = useState(false);
 
-  // Dados de referência
   const [servicos, setServicos] = useState([]);
   const [colaboradoras, setColaboradoras] = useState([]);
   const [produtosLojinha, setProdutosLojinha] = useState([]);
+  const [produtosFreezer, setProdutosFreezer] = useState([]);
 
-  // Form state
   const [cliente, setCliente] = useState(null);
   const [data, setData] = useState('');
   const [hora, setHora] = useState('');
@@ -39,15 +38,14 @@ export default function EditarAtendimento() {
   const [pagamentos, setPagamentos] = useState([]);
   const [observacao, setObservacao] = useState('');
 
-  // Item sendo adicionado
   const [addingType, setAddingType] = useState(null);
   const [itemServicoId, setItemServicoId] = useState('');
   const [itemProdutoId, setItemProdutoId] = useState('');
+  const [itemFreezerId, setItemFreezerId] = useState('');
   const [itemPreco, setItemPreco] = useState('');
   const [itemObs, setItemObs] = useState('');
   const [itemColabs, setItemColabs] = useState([{ colaboradora_id: '', percentual: 100 }]);
 
-  // Modal novo cliente
   const [modalClienteOpen, setModalClienteOpen] = useState(false);
   const [novoClienteNome, setNovoClienteNome] = useState('');
   const [novoClienteTel, setNovoClienteTel] = useState('');
@@ -59,8 +57,8 @@ export default function EditarAtendimento() {
       api.get('/servicos'),
       api.get('/colaboradoras'),
       api.get('/estoque/lojinha'),
-    ]).then(([atd, s, c, p]) => {
-      // Preencher form com dados existentes
+      api.get('/estoque/freezer'),
+    ]).then(([atd, s, c, p, f]) => {
       setCliente({ id: atd.cliente_id, nome: atd.cliente_nome });
       const dt = atd.data_hora?.slice(0, 10) || '';
       const hr = atd.data_hora?.slice(11, 16) || '';
@@ -72,6 +70,7 @@ export default function EditarAtendimento() {
         tipo: item.tipo,
         servico_id: item.servico_id,
         produto_id: item.produto_id,
+        freezer_id: item.freezer_id,
         descricao: item.descricao,
         preco_cobrado: item.preco_cobrado,
         observacao: item.observacao,
@@ -83,10 +82,10 @@ export default function EditarAtendimento() {
       })));
 
       setPagamentos(atd.pagamentos.map(p => ({ forma: p.forma, valor: String(p.valor) })));
-
       setServicos(Array.isArray(s) ? s : []);
       setColaboradoras(Array.isArray(c) ? c.filter(x => x.ativa) : []);
       setProdutosLojinha(Array.isArray(p) ? p : []);
+      setProdutosFreezer(Array.isArray(f) ? f.filter(x => x.ativo) : []);
     }).catch(() => {
       toast.error('Erro ao carregar comanda');
     }).finally(() => setLoading(false));
@@ -96,7 +95,6 @@ export default function EditarAtendimento() {
     return api.get('/clientes?busca=' + encodeURIComponent(query));
   }, []);
 
-  // Cálculos
   const totalItens = itens.reduce((s, i) => s + Number(i.preco_cobrado), 0);
   const totalPago = pagamentos.reduce((s, p) => s + (Number(p.valor) || 0), 0);
   const diferenca = totalItens - totalPago;
@@ -105,7 +103,6 @@ export default function EditarAtendimento() {
     pagamentos.every(p => p.forma && Number(p.valor) > 0) &&
     Math.abs(diferenca) < 0.02 && !salvando;
 
-  // Item sendo adicionado
   const somaPercColabs = itemColabs.reduce((s, c) => s + (Number(c.percentual) || 0), 0);
   const currentItemValid = (() => {
     if (addingType === 'servico') {
@@ -114,9 +111,8 @@ export default function EditarAtendimento() {
       if (somaPercColabs !== 100) return false;
       return true;
     }
-    if (addingType === 'produto') {
-      return itemProdutoId && itemPreco && Number(itemPreco) > 0;
-    }
+    if (addingType === 'produto') return itemProdutoId && itemPreco && Number(itemPreco) > 0;
+    if (addingType === 'freezer') return itemFreezerId && itemPreco && Number(itemPreco) > 0;
     return false;
   })();
 
@@ -138,6 +134,15 @@ export default function EditarAtendimento() {
     } else setItemPreco('');
   }
 
+  function handleSelectFreezer(e) {
+    const id = e.target.value;
+    setItemFreezerId(id);
+    if (id) {
+      const prod = produtosFreezer.find(p => p.id === Number(id));
+      if (prod) setItemPreco(String(prod.preco_venda));
+    } else setItemPreco('');
+  }
+
   function confirmItem() {
     if (!currentItemValid) return;
     if (addingType === 'servico') {
@@ -154,11 +159,21 @@ export default function EditarAtendimento() {
           nome: colaboradoras.find(x => x.id === Number(c.colaboradora_id))?.nome || '',
         })),
       }]);
-    } else {
+    } else if (addingType === 'produto') {
       const prod = produtosLojinha.find(p => p.id === Number(itemProdutoId));
       setItens(prev => [...prev, {
         tipo: 'produto',
         produto_id: Number(itemProdutoId),
+        descricao: prod?.nome || '',
+        preco_cobrado: Number(itemPreco),
+        observacao: null,
+        colaboradoras: [],
+      }]);
+    } else if (addingType === 'freezer') {
+      const prod = produtosFreezer.find(p => p.id === Number(itemFreezerId));
+      setItens(prev => [...prev, {
+        tipo: 'freezer',
+        freezer_id: Number(itemFreezerId),
         descricao: prod?.nome || '',
         preco_cobrado: Number(itemPreco),
         observacao: null,
@@ -172,6 +187,7 @@ export default function EditarAtendimento() {
     setAddingType(null);
     setItemServicoId('');
     setItemProdutoId('');
+    setItemFreezerId('');
     setItemPreco('');
     setItemObs('');
     setItemColabs([{ colaboradora_id: '', percentual: 100 }]);
@@ -220,6 +236,7 @@ export default function EditarAtendimento() {
           tipo: item.tipo,
           servico_id: item.servico_id || null,
           produto_id: item.produto_id || null,
+          freezer_id: item.freezer_id || null,
           descricao: item.descricao,
           preco_cobrado: item.preco_cobrado,
           observacao: item.observacao || null,
@@ -290,6 +307,7 @@ export default function EditarAtendimento() {
               <div key={idx} className="flex items-start justify-between bg-gray-50 rounded-lg px-3 py-2">
                 <div>
                   <span className="text-sm font-medium text-gray-800">{item.descricao}</span>
+                  {item.tipo === 'freezer' && <span className="text-xs text-blue-500 ml-2">[freezer]</span>}
                   {item.colaboradoras?.length > 0 && (
                     <span className="text-xs text-gray-400 ml-2">
                       — {item.colaboradoras.map(c => c.nome).join(', ')}
@@ -307,7 +325,6 @@ export default function EditarAtendimento() {
           <p className="text-sm text-gray-400 mb-3">Nenhum item adicionado</p>
         )}
 
-        {/* Form adicionar item */}
         {addingType && (
           <div className="border border-gray-200 rounded-lg p-3 mb-3 bg-gray-50">
             <div className="flex gap-2 mb-3">
@@ -318,6 +335,10 @@ export default function EditarAtendimento() {
               <button onClick={() => setAddingType('produto')}
                 className={`px-3 py-1 text-xs rounded-full border ${addingType === 'produto' ? 'bg-primary text-white border-primary' : 'text-gray-600 border-gray-300'}`}>
                 Produto da lojinha
+              </button>
+              <button onClick={() => setAddingType('freezer')}
+                className={`px-3 py-1 text-xs rounded-full border ${addingType === 'freezer' ? 'bg-primary text-white border-primary' : 'text-gray-600 border-gray-300'}`}>
+                Freezer
               </button>
             </div>
 
@@ -364,7 +385,7 @@ export default function EditarAtendimento() {
                   </div>
                 </div>
               </>
-            ) : (
+            ) : addingType === 'produto' ? (
               <>
                 <FormField label="Produto" required>
                   <select value={itemProdutoId} onChange={handleSelectProduct}
@@ -378,7 +399,25 @@ export default function EditarAtendimento() {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
                 </FormField>
               </>
-            )}
+            ) : addingType === 'freezer' ? (
+              <>
+                <FormField label="Item do Freezer" required>
+                  <select value={itemFreezerId} onChange={handleSelectFreezer}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
+                    <option value="">Selecione um item...</option>
+                    {produtosFreezer.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.nome}{p.marca ? ` - ${p.marca}` : ''} — R$ {formatCurrency(p.preco_venda)} (estoque: {p.quantidade})
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+                <FormField label="Preço cobrado (R$)" required>
+                  <input type="number" step="0.01" min="0" value={itemPreco} onChange={e => setItemPreco(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+                </FormField>
+              </>
+            ) : null}
 
             <div className="flex justify-end gap-2 mt-3">
               <button onClick={resetItemForm} className="px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Cancelar</button>
@@ -391,7 +430,7 @@ export default function EditarAtendimento() {
         )}
 
         {!addingType && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button onClick={() => setAddingType('servico')}
               className="px-3 py-1.5 text-sm text-primary border border-primary rounded-lg hover:bg-primary-light">
               + Adicionar serviço
@@ -399,6 +438,10 @@ export default function EditarAtendimento() {
             <button onClick={() => setAddingType('produto')}
               className="px-3 py-1.5 text-sm text-primary border border-primary rounded-lg hover:bg-primary-light">
               + Adicionar produto da lojinha
+            </button>
+            <button onClick={() => setAddingType('freezer')}
+              className="px-3 py-1.5 text-sm text-primary border border-primary rounded-lg hover:bg-primary-light">
+              + Adicionar item do freezer
             </button>
           </div>
         )}

@@ -258,6 +258,9 @@ export async function initSchema() {
       console.log('Banco PostgreSQL inicializado com sucesso!');
     } else {
       console.log('Banco PostgreSQL existente — conectado!');
+      // Migracoes incrementais
+      await client.query(`ALTER TABLE atendimentos ADD COLUMN IF NOT EXISTS cortesia INTEGER NOT NULL DEFAULT 0`);
+      await client.query(`ALTER TABLE atendimento_itens ADD COLUMN IF NOT EXISTS cortesia INTEGER NOT NULL DEFAULT 0`);
     }
   } catch (e) {
     console.error('Erro ao inicializar banco:', e);

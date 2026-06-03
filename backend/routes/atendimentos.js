@@ -64,45 +64,54 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { cliente_id, data_hora, observacao, pagamentos, itens, agendamento_id } = req.body;
+  const { cliente_id, data_hora, observacao, pagamentos, itens, agendamento_id, cortesia } = req.body;
   if (!cliente_id) return res.status(400).json({ ok: false, error: 'cliente_id e obrigatorio' });
   if (!data_hora) return res.status(400).json({ ok: false, error: 'data_hora e obrigatorio' });
-  if (!pagamentos?.length) return res.status(400).json({ ok: false, error: 'Pelo menos 1 pagamento e obrigatorio' });
   if (!itens?.length) return res.status(400).json({ ok: false, error: 'Pelo menos 1 item e obrigatorio' });
-  for (const pag of pagamentos) {
-    if (!FORMAS_PAGAMENTO.includes(pag.forma)) return res.status(400).json({ ok: false, error: `Forma invalida: ${pag.forma}` });
+
+  // Cortesia: não valida pagamentos, total cobrado = 0
+  if (!cortesia) {
+    if (!pagamentos?.length) return res.status(400).json({ ok: false, error: 'Pelo menos 1 pagamento e obrigatorio' });
+    for (const pag of pagamentos) {
+      if (!FORMAS_PAGAMENTO.includes(pag.forma)) return res.status(400).json({ ok: false, error: `Forma invalida: ${pag.forma}` });
+    }
+    const somaItens = itens.reduce((s, i) => s + Number(i.preco_cobrado), 0);
+    const somaDesconto = (pagamentos || []).filter(p => p.forma === 'desconto_taxa').reduce((s, p) => s + Number(p.valor), 0);
+    const somaPagamentos = (pagamentos || []).filter(p => p.forma !== 'desconto_taxa').reduce((s, p) => s + Number(p.valor), 0);
+    const totalEsperado = somaItens - somaDesconto;
+    if (Math.abs(totalEsperado - somaPagamentos) > 0.01)
+      return res.status(400).json({ ok: false, error: `Soma dos pagamentos (${somaPagamentos.toFixed(2)}) diferente do total (${totalEsperado.toFixed(2)})` });
   }
+
   const somaItens = itens.reduce((s, i) => s + Number(i.preco_cobrado), 0);
-  const somaDesconto = pagamentos.filter(p => p.forma === 'desconto_taxa').reduce((s, p) => s + Number(p.valor), 0);
-  const somaPagamentos = pagamentos.filter(p => p.forma !== 'desconto_taxa').reduce((s, p) => s + Number(p.valor), 0);
-  const totalEsperado = somaItens - somaDesconto;
-  if (Math.abs(totalEsperado - somaPagamentos) > 0.01)
-    return res.status(400).json({ ok: false, error: `Soma dos pagamentos (${somaPagamentos.toFixed(2)}) diferente do total (${totalEsperado.toFixed(2)})` });
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const atdResult = await client.query(
-      'INSERT INTO atendimentos (cliente_id, data_hora, valor_total, observacao) VALUES ($1, $2, $3, $4) RETURNING id',
-      [cliente_id, data_hora, somaItens, observacao || null]
+      'INSERT INTO atendimentos (cliente_id, data_hora, valor_total, observacao, cortesia) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [cliente_id, data_hora, cortesia ? 0 : somaItens, observacao || null, cortesia ? 1 : 0]
     );
     const atendimentoId = atdResult.rows[0].id;
 
-    for (const pag of pagamentos) {
-      await client.query('INSERT INTO atendimento_pagamentos (atendimento_id, forma, valor) VALUES ($1, $2, $3)', [atendimentoId, pag.forma, pag.valor]);
+    if (!cortesia && pagamentos?.length) {
+      for (const pag of pagamentos) {
+        await client.query('INSERT INTO atendimento_pagamentos (atendimento_id, forma, valor) VALUES ($1, $2, $3)', [atendimentoId, pag.forma, pag.valor]);
+      }
     }
 
     for (const item of itens) {
       const itemResult = await client.query(`
-        INSERT INTO atendimento_itens (atendimento_id, tipo, servico_id, produto_id, freezer_id, promocao_id, descricao, preco_cobrado, observacao)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id
-      `, [atendimentoId, item.tipo, item.servico_id || null, item.produto_id || null, item.freezer_id || null, item.promocao_id || null, item.descricao || null, item.preco_cobrado, item.observacao || null]);
+        INSERT INTO atendimento_itens (atendimento_id, tipo, servico_id, produto_id, freezer_id, promocao_id, descricao, preco_cobrado, observacao, cortesia)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id
+      `, [atendimentoId, item.tipo, item.servico_id || null, item.produto_id || null, item.freezer_id || null, item.promocao_id || null, item.descricao || null, item.preco_cobrado, item.observacao || null, cortesia ? 1 : 0]);
       const itemId = itemResult.rows[0].id;
 
       if (item.colaboradoras) {
         for (const colab of item.colaboradoras) {
           const colabData = await client.query('SELECT comissao_padrao FROM colaboradoras WHERE id = $1', [colab.colaboradora_id]);
           const comissaoPadrao = colabData.rows[0]?.comissao_padrao || 0;
+          // Comissão calculada sobre preço real mesmo em cortesia
           const valorComissao = item.preco_cobrado * (comissaoPadrao / 100) * (colab.percentual_comissao / 100);
           await client.query(
             'INSERT INTO atendimento_item_colaboradoras (atendimento_item_id, colaboradora_id, percentual_comissao, valor_comissao) VALUES ($1, $2, $3, $4)',
@@ -113,19 +122,11 @@ router.post('/', async (req, res) => {
 
       if (item.tipo === 'servico' && item.servico_id) {
         const sv = await client.query('SELECT consome_kit_mao, consome_kit_pe FROM servicos WHERE id = $1', [item.servico_id]);
-        if (sv.rows[0]?.consome_kit_mao) {
-          await client.query(`UPDATE estoque_kits SET quantidade=GREATEST(0,quantidade-1), updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE tipo='mao'`);
-        }
-        if (sv.rows[0]?.consome_kit_pe) {
-          await client.query(`UPDATE estoque_kits SET quantidade=GREATEST(0,quantidade-1), updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE tipo='pe'`);
-        }
+        if (sv.rows[0]?.consome_kit_mao) await client.query(`UPDATE estoque_kits SET quantidade=GREATEST(0,quantidade-1), updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE tipo='mao'`);
+        if (sv.rows[0]?.consome_kit_pe) await client.query(`UPDATE estoque_kits SET quantidade=GREATEST(0,quantidade-1), updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE tipo='pe'`);
       }
-      if (item.tipo === 'produto' && item.produto_id) {
-        await client.query(`UPDATE estoque_lojinha SET quantidade=GREATEST(0,quantidade-1), updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$1`, [item.produto_id]);
-      }
-      if (item.tipo === 'freezer' && item.freezer_id) {
-        await client.query(`UPDATE estoque_freezer SET quantidade=GREATEST(0,quantidade-1), updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$1`, [item.freezer_id]);
-      }
+      if (item.tipo === 'produto' && item.produto_id) await client.query(`UPDATE estoque_lojinha SET quantidade=GREATEST(0,quantidade-1), updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$1`, [item.produto_id]);
+      if (item.tipo === 'freezer' && item.freezer_id) await client.query(`UPDATE estoque_freezer SET quantidade=GREATEST(0,quantidade-1), updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$1`, [item.freezer_id]);
     }
 
     if (agendamento_id) {
@@ -144,17 +145,21 @@ router.post('/', async (req, res) => {
 });
 
 router.put('/:id', async (req, res) => {
-  const { cliente_id, data_hora, observacao, pagamentos, itens } = req.body;
+  const { cliente_id, data_hora, observacao, pagamentos, itens, cortesia } = req.body;
   const atdResult = await pool.query('SELECT * FROM atendimentos WHERE id = $1 AND cancelado = 0', [req.params.id]);
   if (!atdResult.rows[0]) return res.status(404).json({ ok: false, error: 'Atendimento nao encontrado' });
   const atd = atdResult.rows[0];
-  if (!cliente_id || !data_hora || !pagamentos?.length || !itens?.length)
-    return res.status(400).json({ ok: false, error: 'Dados incompletos' });
+  if (!cliente_id || !data_hora || !itens?.length) return res.status(400).json({ ok: false, error: 'Dados incompletos' });
+
   const somaItens = itens.reduce((s, i) => s + Number(i.preco_cobrado), 0);
-  const somaDesconto = pagamentos.filter(p => p.forma === 'desconto_taxa').reduce((s, p) => s + Number(p.valor), 0);
-  const somaPagamentos = pagamentos.filter(p => p.forma !== 'desconto_taxa').reduce((s, p) => s + Number(p.valor), 0);
-  if (Math.abs((somaItens - somaDesconto) - somaPagamentos) > 0.01)
-    return res.status(400).json({ ok: false, error: 'Soma dos pagamentos diferente do total' });
+
+  if (!cortesia) {
+    if (!pagamentos?.length) return res.status(400).json({ ok: false, error: 'Pelo menos 1 pagamento e obrigatorio' });
+    const somaDesconto = pagamentos.filter(p => p.forma === 'desconto_taxa').reduce((s, p) => s + Number(p.valor), 0);
+    const somaPagamentos = pagamentos.filter(p => p.forma !== 'desconto_taxa').reduce((s, p) => s + Number(p.valor), 0);
+    if (Math.abs((somaItens - somaDesconto) - somaPagamentos) > 0.01)
+      return res.status(400).json({ ok: false, error: 'Soma dos pagamentos diferente do total' });
+  }
 
   const client = await pool.connect();
   try {
@@ -171,16 +176,20 @@ router.put('/:id', async (req, res) => {
     }
     await client.query('DELETE FROM atendimento_pagamentos WHERE atendimento_id = $1', [atd.id]);
     await client.query('DELETE FROM atendimento_itens WHERE atendimento_id = $1', [atd.id]);
-    await client.query('UPDATE atendimentos SET cliente_id=$1, data_hora=$2, valor_total=$3, observacao=$4 WHERE id=$5',
-      [cliente_id, data_hora, somaItens, observacao || null, atd.id]);
-    for (const pag of pagamentos) {
-      await client.query('INSERT INTO atendimento_pagamentos (atendimento_id, forma, valor) VALUES ($1, $2, $3)', [atd.id, pag.forma, pag.valor]);
+    await client.query('UPDATE atendimentos SET cliente_id=$1, data_hora=$2, valor_total=$3, observacao=$4, cortesia=$5 WHERE id=$6',
+      [cliente_id, data_hora, cortesia ? 0 : somaItens, observacao || null, cortesia ? 1 : 0, atd.id]);
+
+    if (!cortesia && pagamentos?.length) {
+      for (const pag of pagamentos) {
+        await client.query('INSERT INTO atendimento_pagamentos (atendimento_id, forma, valor) VALUES ($1, $2, $3)', [atd.id, pag.forma, pag.valor]);
+      }
     }
+
     for (const item of itens) {
       const itemResult = await client.query(`
-        INSERT INTO atendimento_itens (atendimento_id, tipo, servico_id, produto_id, freezer_id, promocao_id, descricao, preco_cobrado, observacao)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id
-      `, [atd.id, item.tipo, item.servico_id || null, item.produto_id || null, item.freezer_id || null, item.promocao_id || null, item.descricao || null, item.preco_cobrado, item.observacao || null]);
+        INSERT INTO atendimento_itens (atendimento_id, tipo, servico_id, produto_id, freezer_id, promocao_id, descricao, preco_cobrado, observacao, cortesia)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id
+      `, [atd.id, item.tipo, item.servico_id || null, item.produto_id || null, item.freezer_id || null, item.promocao_id || null, item.descricao || null, item.preco_cobrado, item.observacao || null, cortesia ? 1 : 0]);
       const itemId = itemResult.rows[0].id;
       if (item.colaboradoras) {
         for (const colab of item.colaboradoras) {
