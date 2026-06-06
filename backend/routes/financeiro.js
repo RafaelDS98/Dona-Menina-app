@@ -91,6 +91,21 @@ router.post('/saidas', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
+router.put('/saidas/:id', async (req, res) => {
+  try {
+    const { data, descricao, marca, valor_unit, quantidade, fornecedor } = req.body;
+    if (!data || !descricao || !valor_unit) return res.status(400).json({ ok: false, error: 'data, descricao e valor_unit sao obrigatorios' });
+    const qty = Number(quantidade) || 1;
+    const total = Number(valor_unit) * qty;
+    const result = await pool.query(
+      'UPDATE saidas SET data=$1, descricao=$2, marca=$3, valor_unit=$4, quantidade=$5, valor_total=$6, fornecedor=$7 WHERE id=$8 RETURNING *',
+      [data, descricao, marca || null, valor_unit, qty, total, fornecedor || null, req.params.id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ ok: false, error: 'Saida nao encontrada' });
+    res.json({ ok: true, data: result.rows[0] });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 router.delete('/saidas/:id', async (req, res) => {
   try {
     await pool.query('DELETE FROM saidas WHERE id=$1', [req.params.id]);
