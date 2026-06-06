@@ -750,6 +750,16 @@ export default function Financeiro() {
       </Modal>
 
       <ConfirmDialog
+        open={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={() => { deleteSaida(confirmDelete); setConfirmDelete(null); }}
+        title="Excluir saida"
+        message="Tem certeza que deseja excluir esta saida?"
+        confirmText="Excluir"
+        danger
+      />
+
+      <ConfirmDialog
         open={!!confirmDeletePromo}
         onClose={() => setConfirmDeletePromo(null)}
         onConfirm={() => { deletePromo(confirmDeletePromo); setConfirmDeletePromo(null); }}
