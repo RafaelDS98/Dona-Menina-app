@@ -75,6 +75,7 @@ export default function Financeiro() {
   const [periodKey, setPeriodKey] = useState('hoje');
   const [customRange, setCustomRange] = useState({ data_inicio: '', data_fim: '' });
   const [loading, setLoading] = useState(false);
+  const [loadingSaidas, setLoadingSaidas] = useState(false);
   const [erroPeriodo, setErroPeriodo] = useState('');
 
   // Visao Geral state
@@ -143,14 +144,14 @@ export default function Financeiro() {
 
   const loadSaidas = useCallback(async () => {
     if (!qs) return;
-    setLoading(true);
+    setLoadingSaidas(true);
     try {
       const data = await api.get(`/financeiro/saidas${qs}`);
       setSaidas(Array.isArray(data) ? data : []);
     } catch (e) {
       toast.error(e.message);
     } finally {
-      setLoading(false);
+      setLoadingSaidas(false);
     }
   }, [qs, toast]);
 
@@ -224,20 +225,18 @@ export default function Financeiro() {
       };
       let savedId = null;
       if (saidaEdit) {
-        const updated = await api.put(`/financeiro/saidas/${saidaEdit.id}`, body);
-        savedId = saidaEdit.id;
+        await api.put(`/financeiro/saidas/${saidaEdit.id}`, body);
+        savedId = Number(saidaEdit.id);
         toast.success('Saida atualizada');
       } else {
         const created = await api.post('/financeiro/saidas', body);
-        savedId = created?.id || null;
+        savedId = created?.id ? Number(created.id) : null;
         toast.success('Saida registrada');
       }
       setSaidaModal(false);
+      if (savedId) setHighlightId(savedId);
       await loadSaidas();
-      if (savedId) {
-        setHighlightId(savedId);
-        setTimeout(() => setHighlightId(null), 3000);
-      }
+      if (savedId) setTimeout(() => setHighlightId(null), 3000);
     } catch (e) {
       toast.error(e.message);
     } finally {
@@ -530,8 +529,9 @@ export default function Financeiro() {
       )}
 
       {/* Tab 1 — Saidas */}
-      {tab === 1 && !loading && (
+      {tab === 1 && (
         <div>
+          {loadingSaidas && <p className="text-sm text-gray-400 py-4">Carregando...</p>}
           <div className="flex justify-between items-center mb-4">
             <span className="text-sm text-gray-500">{saidas.length} registro(s)</span>
             <button onClick={openNewSaida} className="bg-primary text-white px-4 py-2 rounded-lg text-sm hover:opacity-90">
@@ -777,3 +777,4 @@ export default function Financeiro() {
     </div>
   );
 }
+

@@ -17,13 +17,14 @@ export default function DataTable({ columns, data, emptyMessage = 'Nenhum regist
         </thead>
         <tbody>
           {data.map((row, i) => {
-            const isHighlighted = highlightId !== null && row.id === highlightId;
+            const isHighlighted = highlightId !== null && Number(row.id) === Number(highlightId);
             return (
               <tr
                 key={row.id || i}
-                className={`border-b border-gray-100 transition-colors ${
-                  isHighlighted ? 'bg-pink-100' : 'hover:bg-gray-50'
-                }`}
+                className="border-b border-gray-100 transition-colors"
+                style={isHighlighted ? { backgroundColor: '#fce7f3' } : {}}
+                onMouseEnter={e => { if (!isHighlighted) e.currentTarget.style.backgroundColor = '#f9fafb'; }}
+                onMouseLeave={e => { if (!isHighlighted) e.currentTarget.style.backgroundColor = ''; }}
               >
                 {columns.map(col => (
                   <td key={col.key} className="py-2.5 px-3">

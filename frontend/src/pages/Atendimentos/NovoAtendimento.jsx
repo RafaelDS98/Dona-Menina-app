@@ -12,6 +12,7 @@ const FORMAS_PAGAMENTO = [
   { value: 'debito', label: 'Débito' },
   { value: 'especie', label: 'Dinheiro' },
   { value: 'desconto_taxa', label: 'Desconto taxa de agendamento (R$ 30)' },
+  { value: 'pago_antecipado', label: 'Pago antecipado' },
 ];
 
 function formatCurrency(value) {
@@ -109,7 +110,7 @@ export default function NovoAtendimento() {
   }, []);
 
   const totalItens = itens.reduce((s, i) => s + Number(i.preco_cobrado), 0);
-  const totalDesconto = pagamentos.filter(p => p.forma === 'desconto_taxa').reduce((s, p) => s + (Number(p.valor) || 0), 0);
+  const totalDesconto = pagamentos.filter(p => p.forma === 'desconto_taxa' || p.forma === 'pago_antecipado').reduce((s, p) => s + (Number(p.valor) || 0), 0);
   const totalAPagar = totalItens - totalDesconto;
   const totalPago = pagamentos.reduce((s, p) => s + (Number(p.valor) || 0), 0);
   const diferenca = totalAPagar - (totalPago - totalDesconto);
@@ -124,7 +125,7 @@ export default function NovoAtendimento() {
     if (addingType === 'servico') {
       if (!itemServicoId || !itemPreco || Number(itemPreco) <= 0) return false;
       const servicoSelecionado = servicos.find(s => s && s.id === Number(itemServicoId));
-      const isTaxa = !!(servicoSelecionado?.nome?.toLowerCase().includes('taxa'));
+      const isTaxa = !!(servicoSelecionado?.nome?.toLowerCase().includes('taxa') || servicoSelecionado?.nome?.toLowerCase().includes('antecipado'));
       if (!isTaxa) {
         if (itemColabs.length === 0) return false;
         if (itemColabs.reduce((s, c) => s + (Number(c.percentual) || 0), 0) !== 100) return false;
@@ -159,7 +160,7 @@ export default function NovoAtendimento() {
     if (!currentItemValid) return;
     if (addingType === 'servico') {
       const svc = servicos.find(s => s && s.id === Number(itemServicoId));
-      const isTaxaItem = !!(svc?.nome?.toLowerCase().includes('taxa'));
+      const isTaxaItem = !!(svc?.nome?.toLowerCase().includes('taxa') || svc?.nome?.toLowerCase().includes('antecipado'));
       setItens(prev => [...prev, {
         tipo: 'servico', servico_id: Number(itemServicoId), descricao: svc?.nome || '',
         preco_cobrado: Number(itemPreco), observacao: itemObs || null,
@@ -503,7 +504,8 @@ export default function NovoAtendimento() {
           <button type="button" onClick={addPagamento} className="text-primary text-sm hover:underline mt-1">+ Adicionar outra forma de pagamento</button>
           <div className="mt-3 pt-3 border-t text-sm space-y-1">
             <div className="flex justify-between"><span className="text-gray-500">Total dos itens:</span><span className="font-medium">R$ {formatCurrency(totalItens)}</span></div>
-            {totalDesconto > 0 && <div className="flex justify-between text-yellow-600"><span>(-) Desconto taxa:</span><span className="font-medium">- R$ {formatCurrency(totalDesconto)}</span></div>}
+            {pagamentos.filter(p => p.forma === 'desconto_taxa').reduce((s,p) => s+(Number(p.valor)||0),0) > 0 && <div className="flex justify-between text-yellow-600"><span>(-) Desconto taxa:</span><span className="font-medium">- R$ {formatCurrency(pagamentos.filter(p => p.forma === 'desconto_taxa').reduce((s,p) => s+(Number(p.valor)||0),0))}</span></div>}
+            {pagamentos.filter(p => p.forma === 'pago_antecipado').reduce((s,p) => s+(Number(p.valor)||0),0) > 0 && <div className="flex justify-between text-yellow-600"><span>(-) Pago antecipado:</span><span className="font-medium">- R$ {formatCurrency(pagamentos.filter(p => p.forma === 'pago_antecipado').reduce((s,p) => s+(Number(p.valor)||0),0))}</span></div>}
             <div className="flex justify-between"><span className="text-gray-500">Total pago:</span><span className="font-medium">R$ {formatCurrency(totalPago - totalDesconto)}</span></div>
             <div className="flex justify-between">
               <span className="text-gray-500">Diferenca:</span>
@@ -572,3 +574,4 @@ export default function NovoAtendimento() {
     </div>
   );
 }
+
