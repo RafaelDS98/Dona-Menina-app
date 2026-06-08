@@ -70,7 +70,7 @@ router.get('/saidas', async (req, res) => {
   try {
     const { data_inicio, data_fim } = req.query;
     const result = await pool.query(
-      'SELECT * FROM saidas WHERE DATE(data) BETWEEN $1 AND $2 ORDER BY data DESC',
+      'SELECT * FROM saidas WHERE DATE(data) BETWEEN $1 AND $2 ORDER BY data DESC, id DESC',
       [data_inicio, data_fim]
     );
     res.json({ ok: true, data: result.rows });
