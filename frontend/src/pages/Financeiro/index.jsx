@@ -47,11 +47,9 @@ function dateRange(key) {
     case 'hoje':
       return { data_inicio: yyyy(today), data_fim: yyyy(today) };
     case 'semana': {
-      const day = today.getDay();
-      const diff = day === 0 ? 6 : day - 1;
-      const mon = new Date(today);
-      mon.setDate(today.getDate() - diff);
-      return { data_inicio: yyyy(mon), data_fim: yyyy(today) };
+      const sete = new Date(today);
+      sete.setDate(today.getDate() - 6);
+      return { data_inicio: yyyy(sete), data_fim: yyyy(today) };
     }
     case 'mes':
       return {
