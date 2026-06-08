@@ -248,11 +248,12 @@ function ProdutoFormModal({ open, onClose, produto, onSaved, apiPath = '/estoque
       if (isEdit) {
         await api.put(`${apiPath}/${produto.id}`, body);
         toast.success(`${titulo.charAt(0).toUpperCase() + titulo.slice(1)} atualizado!`);
+        onSaved(produto.id);
       } else {
-        await api.post(apiPath, body);
+        const created = await api.post(apiPath, body);
         toast.success(`${titulo.charAt(0).toUpperCase() + titulo.slice(1)} criado!`);
+        onSaved(created?.id || null);
       }
-      onSaved();
       onClose();
     } catch (err) {
       toast.error(err.message);
@@ -394,6 +395,8 @@ export default function Estoque() {
   const [ajustarFreezer, setAjustarFreezer] = useState(null);
   const [confirmToggleFreezer, setConfirmToggleFreezer] = useState(null);
   const [confirmDeleteFreezer, setConfirmDeleteFreezer] = useState(null);
+  const [highlightId, setHighlightId] = useState(null);
+  const [highlightFreezer, setHighlightFreezer] = useState(null);
 
   const fetchKits = useCallback(async () => {
     setLoadingKits(true);
@@ -675,6 +678,7 @@ export default function Estoque() {
               columns={columns}
               data={produtosFiltrados}
               emptyMessage={alertaOnly ? 'Nenhum produto com estoque baixo' : 'Nenhum produto encontrado'}
+              highlightId={highlightId}
             />
           )}
         </div>
@@ -709,6 +713,7 @@ export default function Estoque() {
               columns={columnsFrezer}
               data={freezerFiltrados}
               emptyMessage="Nenhum item no freezer"
+              highlightId={highlightFreezer}
             />
           )}
         </div>
@@ -731,7 +736,7 @@ export default function Estoque() {
         open={produtoFormOpen}
         onClose={() => { setProdutoFormOpen(false); setEditProduto(null); }}
         produto={editProduto}
-        onSaved={fetchProdutos}
+        onSaved={(id) => { fetchProdutos(); if (id) { setHighlightId(id); setTimeout(() => setHighlightId(null), 3000); } }}
       />
       <AjustarEstoqueModal
         open={!!ajustarProduto}
@@ -759,7 +764,7 @@ export default function Estoque() {
         open={freezerFormOpen}
         onClose={() => { setFreezerFormOpen(false); setEditFreezer(null); }}
         produto={editFreezer}
-        onSaved={fetchFreezer}
+        onSaved={(id) => { fetchFreezer(); if (id) { setHighlightFreezer(id); setTimeout(() => setHighlightFreezer(null), 3000); } }}
         apiPath="/estoque/freezer"
         titulo="freezer"
       />
@@ -789,3 +794,4 @@ export default function Estoque() {
     </div>
   );
 }
+

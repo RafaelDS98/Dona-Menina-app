@@ -1,4 +1,4 @@
-export default function DataTable({ columns, data, emptyMessage = 'Nenhum registro encontrado' }) {
+export default function DataTable({ columns, data, emptyMessage = 'Nenhum registro encontrado', highlightId = null }) {
   if (!data || data.length === 0) {
     return <p className="text-gray-400 text-sm py-8 text-center">{emptyMessage}</p>;
   }
@@ -16,15 +16,23 @@ export default function DataTable({ columns, data, emptyMessage = 'Nenhum regist
           </tr>
         </thead>
         <tbody>
-          {data.map((row, i) => (
-            <tr key={row.id || i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-              {columns.map(col => (
-                <td key={col.key} className="py-2.5 px-3">
-                  {col.render ? col.render(row[col.key], row) : row[col.key]}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {data.map((row, i) => {
+            const isHighlighted = highlightId !== null && row.id === highlightId;
+            return (
+              <tr
+                key={row.id || i}
+                className={`border-b border-gray-100 transition-colors ${
+                  isHighlighted ? 'bg-pink-100' : 'hover:bg-gray-50'
+                }`}
+              >
+                {columns.map(col => (
+                  <td key={col.key} className="py-2.5 px-3">
+                    {col.render ? col.render(row[col.key], row) : row[col.key]}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

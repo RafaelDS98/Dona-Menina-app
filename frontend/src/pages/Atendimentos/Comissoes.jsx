@@ -110,7 +110,7 @@ export default function Comissoes() {
     {
       key: 'data',
       label: 'Data',
-      render: (val) => new Date(val + 'T00:00').toLocaleDateString('pt-BR'),
+      render: (val) => { const d = val ? val.slice(0,10) : ''; return d ? new Date(d + 'T00:00').toLocaleDateString('pt-BR') : ''; },
     },
     { key: 'cliente', label: 'Cliente' },
     {
@@ -360,3 +360,4 @@ export default function Comissoes() {
     </div>
   );
 }
+
