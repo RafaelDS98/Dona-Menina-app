@@ -2,7 +2,7 @@ import { Router } from 'express';
 import pool from '../database/db.js';
 
 const router = Router();
-const FORMAS_PAGAMENTO = ['pix', 'credito', 'debito', 'especie', 'taxa', 'desconto_taxa'];
+const FORMAS_PAGAMENTO = ['pix', 'credito', 'debito', 'especie', 'taxa', 'desconto_taxa', 'pago_antecipado'];
 
 router.get('/', async (req, res) => {
   try {
@@ -76,8 +76,8 @@ router.post('/', async (req, res) => {
       if (!FORMAS_PAGAMENTO.includes(pag.forma)) return res.status(400).json({ ok: false, error: `Forma invalida: ${pag.forma}` });
     }
     const somaItens = itens.reduce((s, i) => s + Number(i.preco_cobrado), 0);
-    const somaDesconto = (pagamentos || []).filter(p => p.forma === 'desconto_taxa').reduce((s, p) => s + Number(p.valor), 0);
-    const somaPagamentos = (pagamentos || []).filter(p => p.forma !== 'desconto_taxa').reduce((s, p) => s + Number(p.valor), 0);
+    const somaDesconto = (pagamentos || []).filter(p => p.forma === 'desconto_taxa' || p.forma === 'pago_antecipado').reduce((s, p) => s + Number(p.valor), 0);
+    const somaPagamentos = (pagamentos || []).filter(p => p.forma !== 'desconto_taxa' && p.forma !== 'pago_antecipado').reduce((s, p) => s + Number(p.valor), 0);
     const totalEsperado = somaItens - somaDesconto;
     if (Math.abs(totalEsperado - somaPagamentos) > 0.01)
       return res.status(400).json({ ok: false, error: `Soma dos pagamentos (${somaPagamentos.toFixed(2)}) diferente do total (${totalEsperado.toFixed(2)})` });
@@ -155,8 +155,8 @@ router.put('/:id', async (req, res) => {
 
   if (!cortesia) {
     if (!pagamentos?.length) return res.status(400).json({ ok: false, error: 'Pelo menos 1 pagamento e obrigatorio' });
-    const somaDesconto = pagamentos.filter(p => p.forma === 'desconto_taxa').reduce((s, p) => s + Number(p.valor), 0);
-    const somaPagamentos = pagamentos.filter(p => p.forma !== 'desconto_taxa').reduce((s, p) => s + Number(p.valor), 0);
+    const somaDesconto = pagamentos.filter(p => p.forma === 'desconto_taxa' || p.forma === 'pago_antecipado').reduce((s, p) => s + Number(p.valor), 0);
+    const somaPagamentos = pagamentos.filter(p => p.forma !== 'desconto_taxa' && p.forma !== 'pago_antecipado').reduce((s, p) => s + Number(p.valor), 0);
     if (Math.abs((somaItens - somaDesconto) - somaPagamentos) > 0.01)
       return res.status(400).json({ ok: false, error: 'Soma dos pagamentos diferente do total' });
   }
@@ -252,3 +252,4 @@ router.delete('/:id', async (req, res) => {
 });
 
 export default router;
+

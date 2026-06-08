@@ -43,7 +43,7 @@ router.get('/por-forma-pagamento', async (req, res) => {
     const result = await pool.query(`
       SELECT ap.forma, SUM(ap.valor) as valor_total
       FROM atendimento_pagamentos ap JOIN atendimentos a ON a.id=ap.atendimento_id
-      WHERE a.cancelado=0 AND DATE(a.data_hora) BETWEEN $1 AND $2 AND ap.forma != 'desconto_taxa'
+      WHERE a.cancelado=0 AND DATE(a.data_hora) BETWEEN $1 AND $2 AND ap.forma != 'desconto_taxa' AND ap.forma != 'pago_antecipado'
       GROUP BY ap.forma
     `, [data_inicio, data_fim]);
     res.json({ ok: true, data: result.rows });
