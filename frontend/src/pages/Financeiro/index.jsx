@@ -91,6 +91,7 @@ export default function Financeiro() {
   const [saidaForm, setSaidaForm] = useState(EMPTY_SAIDA);
   const [savingSaida, setSavingSaida] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [highlightId, setHighlightId] = useState(null);
 
   // Promocoes state
   const [promocoes, setPromocoes] = useState([]);
@@ -223,15 +224,22 @@ export default function Financeiro() {
         quantidade: Number(saidaForm.quantidade) || 1,
         fornecedor: saidaForm.fornecedor || null,
       };
+      let savedId = null;
       if (saidaEdit) {
-        await api.put(`/financeiro/saidas/${saidaEdit.id}`, body);
+        const updated = await api.put(`/financeiro/saidas/${saidaEdit.id}`, body);
+        savedId = saidaEdit.id;
         toast.success('Saida atualizada');
       } else {
-        await api.post('/financeiro/saidas', body);
+        const created = await api.post('/financeiro/saidas', body);
+        savedId = created?.id || null;
         toast.success('Saida registrada');
       }
       setSaidaModal(false);
-      loadSaidas();
+      await loadSaidas();
+      if (savedId) {
+        setHighlightId(savedId);
+        setTimeout(() => setHighlightId(null), 3000);
+      }
     } catch (e) {
       toast.error(e.message);
     } finally {
@@ -532,7 +540,7 @@ export default function Financeiro() {
               Registrar saida
             </button>
           </div>
-          <DataTable columns={saidasColumns} data={saidas} emptyMessage="Nenhuma saida no periodo" />
+          <DataTable columns={saidasColumns} data={saidas} emptyMessage="Nenhuma saida no periodo" highlightId={highlightId} />
           {saidas.length > 0 && (
             <div className="flex justify-end mt-2 pr-3">
               <span className="text-sm font-semibold text-gray-700">
@@ -748,6 +756,16 @@ export default function Financeiro() {
           </button>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={() => { deleteSaida(confirmDelete); setConfirmDelete(null); }}
+        title="Excluir saida"
+        message="Tem certeza que deseja excluir esta saida?"
+        confirmText="Excluir"
+        danger
+      />
 
       <ConfirmDialog
         open={!!confirmDeletePromo}
