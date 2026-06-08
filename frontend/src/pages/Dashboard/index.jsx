@@ -11,12 +11,13 @@ function localISO(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
+function formatarDataLabel(dataStr) {
+  const [ano, mes, dia] = dataStr.split('-');
+  return `${dia}/${mes}/${ano}`;
+}
+
 const LABEL_FORMA = {
-  pix: 'PIX',
-  credito: 'Crédito',
-  debito: 'Débito',
-  especie: 'Dinheiro',
-  taxa: 'Taxa de agendamento',
+  pix: 'PIX', credito: 'Crédito', debito: 'Débito', especie: 'Dinheiro', taxa: 'Taxa de agendamento',
 };
 
 export default function Dashboard() {
@@ -26,17 +27,48 @@ export default function Dashboard() {
   const [fechamentoAberto, setFechamentoAberto] = useState(false);
   const [carregandoFechamento, setCarregandoFechamento] = useState(false);
   const [dataFechamento, setDataFechamento] = useState(localISO(new Date()));
+  const [fechamentoDados, setFechamentoDados] = useState(null);
+  const [carregandoDados, setCarregandoDados] = useState(false);
+
+  const hoje = localISO(new Date());
+  const isHoje = dataFechamento === hoje;
 
   useEffect(() => {
     api.get('/dashboard').then(setData).catch(console.error).finally(() => setLoading(false));
   }, []);
 
-  async function handleBaixarFechamento() {
+  async function buscarFechamento(dataStr) {
+    setCarregandoDados(true);
+    try {
+      const dados = await api.get(`/fechamento?data=${dataStr}`);
+      setFechamentoDados(dados);
+    } catch {
+      toast.error('Erro ao buscar fechamento');
+      setFechamentoDados(null);
+    } finally {
+      setCarregandoDados(false);
+    }
+  }
+
+  function handleDataChange(e) {
+    const novaData = e.target.value;
+    setDataFechamento(novaData);
+    buscarFechamento(novaData);
+    if (!fechamentoAberto) setFechamentoAberto(true);
+  }
+
+  function handleToggleFechamento() {
+    const novoEstado = !fechamentoAberto;
+    setFechamentoAberto(novoEstado);
+    if (novoEstado && !fechamentoDados) buscarFechamento(dataFechamento);
+  }
+
+  async function handleBaixar() {
     setCarregandoFechamento(true);
     try {
-      const dados = await api.get(`/fechamento?data=${dataFechamento}`);
+      const dados = fechamentoDados || await api.get(`/fechamento?data=${dataFechamento}`);
       baixarFechamento(dados);
-      toast.success('Fechamento baixado com sucesso!');
+      toast.success('Fechamento baixado!');
     } catch (err) {
       toast.error('Erro ao gerar fechamento: ' + err.message);
     } finally {
@@ -47,12 +79,27 @@ export default function Dashboard() {
   if (loading) return <p className="text-gray-500">Carregando dashboard...</p>;
   if (!data) return <p className="text-red-500">Erro ao carregar dashboard</p>;
 
-  const hoje = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+  // Faturamento e atendimentos: usa dados do fechamento se data != hoje
+  const faturamento = isHoje
+    ? data.faturamento_hoje
+    : (fechamentoDados ? fechamentoDados.total_dia : null);
+
+  const totalAtendimentos = isHoje
+    ? data.total_atendimentos_hoje
+    : (fechamentoDados ? fechamentoDados.atendimentos?.length : null);
+
+  const pagamentos = fechamentoDados?.totais_por_forma
+    ? Object.entries(fechamentoDados.totais_por_forma).map(([forma, total]) => ({ forma: forma.toLowerCase(), total }))
+    : data.pagamentos_hoje || [];
+
+  const totalFechamento = isHoje ? data.faturamento_hoje : (fechamentoDados?.total_dia || 0);
+
+  const hoje_label = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
 
   return (
     <div>
       <h2 className="font-title text-2xl text-gray-800 mb-1">Dashboard</h2>
-      <p className="text-sm text-gray-400 mb-6 capitalize">{hoje}</p>
+      <p className="text-sm text-gray-400 mb-6 capitalize">{hoje_label}</p>
 
       {data.backup_vencido && (
         <div className="bg-alert-warning/10 border border-alert-warning text-alert-urgent rounded-lg p-3 mb-4 text-sm">
@@ -66,53 +113,64 @@ export default function Dashboard() {
       )}
 
       <div className="bg-white rounded-lg shadow-sm border mb-4 overflow-hidden">
-        <div className="p-5 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-500 mb-1">Faturamento de hoje</p>
-            <p className="text-3xl font-bold text-primary">R$ {formatCurrency(data.faturamento_hoje)}</p>
-            <p className="text-xs text-gray-400 mt-1">
-              {data.total_atendimentos_hoje} atendimento{data.total_atendimentos_hoje !== 1 ? 's' : ''} realizado{data.total_atendimentos_hoje !== 1 ? 's' : ''}
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-gray-500">Escolher data do fechamento a ser gerado</label>
-              <input
-                type="date"
-                value={dataFechamento}
-                onChange={(e) => setDataFechamento(e.target.value)}
-                className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-              />
+        <div className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm text-gray-500 mb-1">
+                {isHoje ? 'Faturamento de hoje' : `Faturamento do dia ${formatarDataLabel(dataFechamento)}`}
+              </p>
+              <p className="text-3xl font-bold text-primary">
+                {faturamento !== null ? `R$ ${formatCurrency(faturamento)}` : <span className="text-gray-300 text-2xl">Carregando...</span>}
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                {totalAtendimentos !== null
+                  ? `${totalAtendimentos} atendimento${totalAtendimentos !== 1 ? 's' : ''} realizado${totalAtendimentos !== 1 ? 's' : ''}`
+                  : isHoje ? '' : 'Carregando...'}
+              </p>
             </div>
-            <div className="flex gap-2">
-              <button
-                onClick={handleBaixarFechamento}
-                disabled={carregandoFechamento}
-                className="px-4 py-2 text-sm text-white bg-primary rounded-lg hover:bg-primary-hover disabled:opacity-40 transition-colors"
-                title="Baixar fechamento do dia em arquivo TXT"
-              >
-                {carregandoFechamento ? 'Gerando...' : '⬇ Baixar'}
-              </button>
-              <button
-                onClick={() => setFechamentoAberto(v => !v)}
-                className="flex items-center gap-2 px-4 py-2 text-sm text-primary border border-primary rounded-lg hover:bg-primary-light transition-colors"
-              >
-                {fechamentoAberto ? 'Fechar' : 'Ver fechamento'}
-                <span className="text-xs">{fechamentoAberto ? '▲' : '▼'}</span>
-              </button>
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <label className="text-xs text-gray-500 whitespace-nowrap">Escolher data do fechamento a ser gerado</label>
+                <input
+                  type="date"
+                  value={dataFechamento}
+                  onChange={handleDataChange}
+                  className="border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleBaixar}
+                  disabled={carregandoFechamento}
+                  className="px-4 py-2 text-sm text-white bg-primary rounded-lg hover:bg-primary-hover disabled:opacity-40 transition-colors"
+                >
+                  {carregandoFechamento ? 'Gerando...' : '⬇ Baixar'}
+                </button>
+                <button
+                  onClick={handleToggleFechamento}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-primary border border-primary rounded-lg hover:bg-primary-light transition-colors"
+                >
+                  {fechamentoAberto ? 'Fechar' : 'Ver fechamento'}
+                  <span className="text-xs">{fechamentoAberto ? '▲' : '▼'}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
         {fechamentoAberto && (
           <div className="border-t bg-gray-50 px-5 py-4">
-            <p className="text-sm font-semibold text-gray-700 mb-3">Fechamento do dia</p>
-            {!data.pagamentos_hoje || data.pagamentos_hoje.length === 0 ? (
-              <p className="text-sm text-gray-400">Nenhum pagamento registrado hoje.</p>
+            <p className="text-sm font-semibold text-gray-700 mb-3">
+              Fechamento — {formatarDataLabel(dataFechamento)}
+            </p>
+            {carregandoDados ? (
+              <p className="text-sm text-gray-400">Carregando...</p>
+            ) : pagamentos.length === 0 ? (
+              <p className="text-sm text-gray-400">Nenhum pagamento registrado nesta data.</p>
             ) : (
               <div className="space-y-2">
-                {data.pagamentos_hoje.map(p => (
-                  <div key={p.forma} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-0">
+                {pagamentos.map((p, i) => (
+                  <div key={i} className="flex items-center justify-between py-2 border-b border-gray-200 last:border-0">
                     <div className="flex items-center gap-2">
                       <span className={`w-2 h-2 rounded-full ${
                         p.forma === 'pix' ? 'bg-green-400' :
@@ -127,7 +185,7 @@ export default function Dashboard() {
                 ))}
                 <div className="flex items-center justify-between pt-2 mt-1">
                   <span className="text-sm font-bold text-gray-700">Total</span>
-                  <span className="text-sm font-bold text-primary">R$ {formatCurrency(data.faturamento_hoje)}</span>
+                  <span className="text-sm font-bold text-primary">R$ {formatCurrency(totalFechamento)}</span>
                 </div>
               </div>
             )}
@@ -159,15 +217,9 @@ export default function Dashboard() {
       </div>
 
       <div className="flex gap-3">
-        <a href="/atendimentos/novo" className="bg-primary text-white px-4 py-2 rounded-lg text-sm hover:bg-primary-hover transition-colors">
-          Nova comanda
-        </a>
-        <a href="/atendimentos" className="bg-white border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors">
-          Ver atendimentos
-        </a>
-        <a href="/agenda" className="bg-white border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors">
-          Ver agenda
-        </a>
+        <a href="/atendimentos/novo" className="bg-primary text-white px-4 py-2 rounded-lg text-sm hover:bg-primary-hover transition-colors">Nova comanda</a>
+        <a href="/atendimentos" className="bg-white border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors">Ver atendimentos</a>
+        <a href="/agenda" className="bg-white border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors">Ver agenda</a>
       </div>
     </div>
   );

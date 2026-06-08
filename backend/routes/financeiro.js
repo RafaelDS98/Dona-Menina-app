@@ -70,7 +70,7 @@ router.get('/saidas', async (req, res) => {
   try {
     const { data_inicio, data_fim } = req.query;
     const result = await pool.query(
-      'SELECT * FROM saidas WHERE DATE(data) BETWEEN $1 AND $2 ORDER BY data DESC',
+      'SELECT * FROM saidas WHERE DATE(data) BETWEEN $1 AND $2 ORDER BY data DESC, id DESC',
       [data_inicio, data_fim]
     );
     res.json({ ok: true, data: result.rows });
@@ -88,6 +88,21 @@ router.post('/saidas', async (req, res) => {
       [data, descricao, marca || null, valor_unit, qty, total, fornecedor || null]
     );
     res.status(201).json({ ok: true, data: result.rows[0] });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
+router.put('/saidas/:id', async (req, res) => {
+  try {
+    const { data, descricao, marca, valor_unit, quantidade, fornecedor } = req.body;
+    if (!data || !descricao || !valor_unit) return res.status(400).json({ ok: false, error: 'data, descricao e valor_unit sao obrigatorios' });
+    const qty = Number(quantidade) || 1;
+    const total = Number(valor_unit) * qty;
+    const result = await pool.query(
+      'UPDATE saidas SET data=$1, descricao=$2, marca=$3, valor_unit=$4, quantidade=$5, valor_total=$6, fornecedor=$7 WHERE id=$8 RETURNING *',
+      [data, descricao, marca || null, valor_unit, qty, total, fornecedor || null, req.params.id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ ok: false, error: 'Saida nao encontrada' });
+    res.json({ ok: true, data: result.rows[0] });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
