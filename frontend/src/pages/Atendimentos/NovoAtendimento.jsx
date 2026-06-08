@@ -125,7 +125,7 @@ export default function NovoAtendimento() {
     if (addingType === 'servico') {
       if (!itemServicoId || !itemPreco || Number(itemPreco) <= 0) return false;
       const servicoSelecionado = servicos.find(s => s && s.id === Number(itemServicoId));
-      const isTaxa = !!(servicoSelecionado?.nome?.toLowerCase().includes('taxa'));
+      const isTaxa = !!(servicoSelecionado?.nome?.toLowerCase().includes('taxa') || servicoSelecionado?.nome?.toLowerCase().includes('antecipado'));
       if (!isTaxa) {
         if (itemColabs.length === 0) return false;
         if (itemColabs.reduce((s, c) => s + (Number(c.percentual) || 0), 0) !== 100) return false;
@@ -160,7 +160,7 @@ export default function NovoAtendimento() {
     if (!currentItemValid) return;
     if (addingType === 'servico') {
       const svc = servicos.find(s => s && s.id === Number(itemServicoId));
-      const isTaxaItem = !!(svc?.nome?.toLowerCase().includes('taxa'));
+      const isTaxaItem = !!(svc?.nome?.toLowerCase().includes('taxa') || svc?.nome?.toLowerCase().includes('antecipado'));
       setItens(prev => [...prev, {
         tipo: 'servico', servico_id: Number(itemServicoId), descricao: svc?.nome || '',
         preco_cobrado: Number(itemPreco), observacao: itemObs || null,
