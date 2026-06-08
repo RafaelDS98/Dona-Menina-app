@@ -224,20 +224,18 @@ export default function Financeiro() {
       };
       let savedId = null;
       if (saidaEdit) {
-        const updated = await api.put(`/financeiro/saidas/${saidaEdit.id}`, body);
-        savedId = saidaEdit.id;
+        await api.put(`/financeiro/saidas/${saidaEdit.id}`, body);
+        savedId = Number(saidaEdit.id);
         toast.success('Saida atualizada');
       } else {
         const created = await api.post('/financeiro/saidas', body);
-        savedId = created?.id || null;
+        savedId = created?.id ? Number(created.id) : null;
         toast.success('Saida registrada');
       }
       setSaidaModal(false);
+      if (savedId) setHighlightId(savedId);
       await loadSaidas();
-      if (savedId) {
-        setHighlightId(savedId);
-        setTimeout(() => setHighlightId(null), 3000);
-      }
+      if (savedId) setTimeout(() => setHighlightId(null), 3000);
     } catch (e) {
       toast.error(e.message);
     } finally {
@@ -777,3 +775,4 @@ export default function Financeiro() {
     </div>
   );
 }
+

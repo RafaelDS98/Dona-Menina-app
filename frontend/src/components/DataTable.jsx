@@ -17,7 +17,7 @@ export default function DataTable({ columns, data, emptyMessage = 'Nenhum regist
         </thead>
         <tbody>
           {data.map((row, i) => {
-            const isHighlighted = highlightId !== null && row.id === highlightId;
+            const isHighlighted = highlightId !== null && Number(row.id) === Number(highlightId);
             return (
               <tr
                 key={row.id || i}
