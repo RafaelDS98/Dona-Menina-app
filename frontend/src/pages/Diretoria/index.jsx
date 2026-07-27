@@ -355,6 +355,7 @@ export default function Diretoria() {
   const [porColab, setPorColab] = useState([]);
   const [saidas, setSaidas] = useState([]);
   const [comissoes, setComissoes] = useState(null);
+  const [adAbertos, setAdAbertos] = useState([]);
   const [custom, setCustom] = useState({ data_inicio: '', data_fim: '' });
 
   const intervalo = useMemo(() => {
@@ -371,14 +372,16 @@ export default function Diretoria() {
     setLoading(true);
     const qs = `data_inicio=${intervalo.data_inicio}&data_fim=${intervalo.data_fim}`;
     try {
-      const [r, s, f, c, sd, com] = await Promise.all([
+      const [r, s, f, c, sd, com, ads] = await Promise.all([
         api.get(`/financeiro/resumo?${qs}`),
         api.get(`/financeiro/por-servico?${qs}`),
         api.get(`/financeiro/por-forma-pagamento?${qs}`),
         api.get(`/financeiro/por-colaboradora?${qs}`),
         api.get(`/financeiro/saidas?${qs}`),
         api.get(`/comissoes?todas=true&${qs}`),
+        api.get(`/adiantamentos?status=aberto`).catch(() => []),
       ]);
+      setAdAbertos(Array.isArray(ads) ? ads : []);
       setResumo(r);
       setPorServico(s.map(x => ({ ...x, quantidade: Number(x.quantidade), valor_total: Number(x.valor_total) })));
       setPorForma(f.map(x => ({ ...x, valor_total: Number(x.valor_total) })));
@@ -599,6 +602,14 @@ export default function Diretoria() {
             <KpiCard label="Resultado do salão" valor={fmtR(liquido)} sub="fat. − comissões − saídas" />
             <KpiCard label="Ticket médio" valor={atend > 0 ? fmtR(ticket) : '—'} sub="por atendimento" />
           </div>
+
+          {adAbertos.length > 0 && (
+            <div className="bg-amber-50 border border-amber-300 rounded-lg px-4 py-3 mb-3 text-sm text-amber-800">
+              <span className="font-semibold">⚠ Adiantamentos em aberto ({adAbertos.length}):</span>{' '}
+              {adAbertos.map(a => `${a.cliente_nome} R$ ${formatCurrency(a.valor)} (${a.data?.split('-').reverse().join('/')})`).join(' · ')}
+              {' — '}total <b>R$ {formatCurrency(adAbertos.reduce((s, a) => s + Number(a.valor), 0))}</b>. Sinais recebidos e ainda não aplicados em comandas.
+            </div>
+          )}
 
           {(selServ.filtrando || selFormas.filtrando || selColab.filtrando) && (
             <div className="bg-primary-light border border-primary/30 rounded-lg px-4 py-3 mb-5 text-sm text-gray-700 flex flex-wrap gap-x-6 gap-y-1">

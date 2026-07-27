@@ -8,7 +8,7 @@ router.get('/', async (req, res) => {
     const { ativas } = req.query;
     let promoResult;
     if (ativas === 'true') {
-      const hoje = new Date().toISOString().split('T')[0];
+      const hoje = new Date().toLocaleDateString('en-CA', { timeZone: process.env.SALAO_TZ || 'America/Belem' });
       promoResult = await pool.query('SELECT * FROM promocoes WHERE ativa=1 AND data_inicio<=$1 AND data_fim>=$2 ORDER BY nome', [hoje, hoje]);
     } else {
       promoResult = await pool.query('SELECT * FROM promocoes ORDER BY data_fim DESC');
@@ -89,7 +89,8 @@ router.put('/:id', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
-    await pool.query('DELETE FROM promocoes WHERE id=$1', [req.params.id]);
+    const result = await pool.query('DELETE FROM promocoes WHERE id=$1 RETURNING id', [req.params.id]);
+    if (!result.rows[0]) return res.status(404).json({ ok: false, error: 'Promocao nao encontrada' });
     res.json({ ok: true, data: null });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });

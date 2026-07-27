@@ -5,7 +5,8 @@ const router = Router();
 
 router.get('/', async (req, res) => {
   try {
-    const { q } = req.query;
+    // Aceita ?q= e ?busca= (telas diferentes usavam nomes diferentes)
+    const q = req.query.q || req.query.busca;
     let result;
     if (q) {
       const term = `%${q}%`;
@@ -25,9 +26,12 @@ router.get('/verificar-telefone', async (req, res) => {
     const { telefone } = req.query;
     if (!telefone || telefone.trim().length < 8) return res.json({ ok: true, data: null });
     const soNumeros = telefone.replace(/\D/g, '');
-    const result = await pool.query('SELECT * FROM clientes WHERE ativa = 1 AND telefone IS NOT NULL');
-    const encontrada = result.rows.find(c => c.telefone && c.telefone.replace(/\D/g, '') === soNumeros);
-    res.json({ ok: true, data: encontrada || null });
+    // Comparacao direto no banco (sem carregar a tabela inteira)
+    const result = await pool.query(
+      `SELECT * FROM clientes WHERE ativa = 1 AND telefone IS NOT NULL AND regexp_replace(telefone, '\\D', '', 'g') = $1 LIMIT 1`,
+      [soNumeros]
+    );
+    res.json({ ok: true, data: result.rows[0] || null });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
@@ -96,8 +100,11 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Nome deve ter pelo menos 2 caracteres' });
     if (telefone && telefone.trim()) {
       const soNumeros = telefone.replace(/\D/g, '');
-      const all = await pool.query('SELECT * FROM clientes WHERE ativa = 1 AND telefone IS NOT NULL');
-      const existente = all.rows.find(c => c.telefone && c.telefone.replace(/\D/g, '') === soNumeros);
+      const dup = await pool.query(
+        `SELECT * FROM clientes WHERE ativa = 1 AND telefone IS NOT NULL AND regexp_replace(telefone, '\\D', '', 'g') = $1 LIMIT 1`,
+        [soNumeros]
+      );
+      const existente = dup.rows[0];
       if (existente) return res.status(409).json({ ok: false, error: `Este telefone já está cadastrado para "${existente.nome}"`, data: existente });
     }
     const result = await pool.query(

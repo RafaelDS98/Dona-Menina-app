@@ -10,10 +10,14 @@ function calcKitStatus(kit) {
   return 'critico';
 }
 
+// Data de "hoje" no fuso do salao (o servidor roda em UTC; sem isso o dia virava as 21h)
+function hojeLocal() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: process.env.SALAO_TZ || 'America/Belem' });
+}
+
 router.get('/', async (req, res) => {
   try {
-    const agora = new Date();
-    const hoje = new Date(agora.getTime() - agora.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+    const hoje = hojeLocal();
     const mesInicio = hoje.slice(0, 7) + '-01';
 
     const agResult = await pool.query(`
@@ -35,12 +39,12 @@ router.get('/', async (req, res) => {
 
     const fatHoje = await pool.query(`
       SELECT COALESCE(SUM(valor_total),0) as valor, COUNT(*) as total
-      FROM atendimentos WHERE cancelado=0 AND DATE(data_hora)=$1
+      FROM atendimentos WHERE cancelado=0 AND status='concluida' AND DATE(data_hora)=$1
     `, [hoje]);
 
     const fatMes = await pool.query(`
       SELECT COALESCE(SUM(valor_total),0) as valor, COUNT(*) as total
-      FROM atendimentos WHERE cancelado=0 AND DATE(data_hora) BETWEEN $1 AND $2
+      FROM atendimentos WHERE cancelado=0 AND status='concluida' AND DATE(data_hora) BETWEEN $1 AND $2
     `, [mesInicio, hoje]);
 
     const kitsResult = await pool.query('SELECT * FROM estoque_kits');
@@ -59,19 +63,30 @@ router.get('/', async (req, res) => {
       backupVencido = Math.floor(diff / (1000 * 60 * 60 * 24)) >= Number(intervalo.rows[0]?.valor || 7);
     }
 
+    // Somente dinheiro que entrou de fato (abatimentos fora)
     const pagHoje = await pool.query(`
-      SELECT ap.forma, COALESCE(SUM(ap.valor),0) as total
+      SELECT ap.forma, ROUND(COALESCE(SUM(ap.valor),0)::numeric, 2) as total
       FROM atendimento_pagamentos ap
       JOIN atendimentos a ON a.id=ap.atendimento_id
       WHERE a.cancelado=0 AND DATE(a.data_hora)=$1
+        AND ap.forma != 'desconto_taxa' AND ap.forma != 'pago_antecipado'
       GROUP BY ap.forma ORDER BY total DESC
+    `, [hoje]);
+
+    // Sinais recebidos hoje (tambem sao dinheiro em caixa)
+    const adHoje = await pool.query(`
+      SELECT ROUND(COALESCE(SUM(valor),0)::numeric, 2) as total, COUNT(*) as qtde
+      FROM adiantamentos WHERE data=$1 AND status != 'devolvido'
     `, [hoje]);
 
     res.json({ ok: true, data: {
       agendamentos_hoje: agendamentos,
-      faturamento_hoje: parseFloat(fatHoje.rows[0].valor),
+      faturamento_hoje: Math.round(Number(fatHoje.rows[0].valor) * 100) / 100,
       total_atendimentos_hoje: parseInt(fatHoje.rows[0].total),
+      faturamento_mes: Math.round(Number(fatMes.rows[0].valor) * 100) / 100,
+      total_atendimentos_mes: parseInt(fatMes.rows[0].total),
       pagamentos_hoje: pagHoje.rows,
+      adiantamentos_hoje: { total: Number(adHoje.rows[0].total), qtde: parseInt(adHoje.rows[0].qtde) },
       kits,
       promocoes_ativas: promoResult.rows,
       backup_vencido: backupVencido,

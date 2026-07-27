@@ -12,7 +12,8 @@ const FORMAS_PAGAMENTO = [
   { value: 'debito', label: 'Débito' },
   { value: 'especie', label: 'Dinheiro' },
   { value: 'desconto_taxa', label: 'Desconto taxa de agendamento (R$ 30)' },
-  { value: 'pago_antecipado', label: 'Pago antecipado' },
+  // 'pago_antecipado' nao e mais digitado a mao: entra automaticamente ao aplicar
+  // um adiantamento registrado em Financeiro > Adiantamentos (evita duplicata)
 ];
 
 function formatCurrency(value) {
@@ -51,6 +52,8 @@ export default function NovoAtendimento() {
   const [observacao, setObservacao] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [cortesia, setCortesia] = useState(false);
+  const [adiantamentos, setAdiantamentos] = useState([]);
+  const [aplicados, setAplicados] = useState([]); // adiantamentos aplicados como abatimento
 
   const [addingType, setAddingType] = useState(null);
   const [itemServicoId, setItemServicoId] = useState('');
@@ -109,14 +112,33 @@ export default function NovoAtendimento() {
     return api.get('/clientes?q=' + encodeURIComponent(query));
   }, []);
 
+  // Adiantamentos em aberto da cliente selecionada (aviso automatico)
+  useEffect(() => {
+    setAplicados([]);
+    if (!cliente?.id) { setAdiantamentos([]); return; }
+    api.get(`/adiantamentos?cliente_id=${cliente.id}&status=aberto`)
+      .then(ads => setAdiantamentos(Array.isArray(ads) ? ads : []))
+      .catch(() => setAdiantamentos([]));
+  }, [cliente?.id]);
+
+  function aplicarAdiantamento(ad) {
+    setAplicados(prev => prev.some(a => a.id === ad.id) ? prev : [...prev, ad]);
+  }
+  function removerAdiantamento(id) {
+    setAplicados(prev => prev.filter(a => a.id !== id));
+  }
+
   const totalItens = itens.reduce((s, i) => s + Number(i.preco_cobrado), 0);
-  const totalDesconto = pagamentos.filter(p => p.forma === 'desconto_taxa' || p.forma === 'pago_antecipado').reduce((s, p) => s + (Number(p.valor) || 0), 0);
+  const totalAntecipado = aplicados.reduce((s, a) => s + Number(a.valor), 0);
+  const totalDesconto = pagamentos.filter(p => p.forma === 'desconto_taxa').reduce((s, p) => s + (Number(p.valor) || 0), 0) + totalAntecipado;
   const totalAPagar = totalItens - totalDesconto;
-  const totalPago = pagamentos.reduce((s, p) => s + (Number(p.valor) || 0), 0);
-  const diferenca = totalAPagar - (totalPago - totalDesconto);
+  const totalPagoReal = pagamentos.filter(p => p.forma !== 'desconto_taxa').reduce((s, p) => s + (Number(p.valor) || 0), 0);
+  const diferenca = totalAPagar - totalPagoReal;
 
   const itensValidos = itens.length > 0;
-  const pagamentosValidos = cortesia || pagamentos.every(p => p.forma && Number(p.valor) > 0);
+  const manualComValor = pagamentos.filter(p => Number(p.valor) > 0);
+  const manualInvalido = pagamentos.some(p => p.valor !== '' && !(Number(p.valor) > 0));
+  const pagamentosValidos = cortesia || (!manualInvalido && (manualComValor.length > 0 || (totalAntecipado > 0 && totalAPagar < 0.02)));
   const diferencaOk = cortesia || Math.abs(diferenca) < 0.02;
   const clienteOk = !!cliente;
   const canSubmit = clienteOk && itensValidos && pagamentosValidos && diferencaOk && !salvando;
@@ -231,7 +253,11 @@ export default function NovoAtendimento() {
         observacao: observacao || null,
         agendamento_id: agendamentoId ? Number(agendamentoId) : null,
         cortesia,
-        pagamentos: cortesia ? [] : pagamentos.map(p => ({ forma: p.forma, valor: Number(p.valor) })),
+        adiantamento_ids: cortesia ? [] : aplicados.map(a => a.id),
+        pagamentos: cortesia ? [] : [
+          ...pagamentos.filter(p => Number(p.valor) > 0).map(p => ({ forma: p.forma, valor: Number(p.valor) })),
+          ...aplicados.map(a => ({ forma: 'pago_antecipado', valor: Number(a.valor) })),
+        ],
         itens: itens.map(i => ({
           tipo: i.tipo,
           servico_id: i.tipo === 'servico' ? i.servico_id : undefined,
@@ -315,6 +341,34 @@ export default function NovoAtendimento() {
           </div>
         )}
       </section>
+
+      {/* ADIANTAMENTOS DA CLIENTE */}
+      {cliente && adiantamentos.length > 0 && !cortesia && (
+        <section className="bg-amber-50 border border-amber-300 rounded-lg p-4 mb-4">
+          <h3 className="font-semibold text-amber-800 mb-1">⚠️ Esta cliente tem pagamento antecipado!</h3>
+          <p className="text-xs text-amber-700 mb-3">Aplique o sinal como abatimento para não cobrar duas vezes. O valor já entrou no caixa no dia em que foi recebido.</p>
+          <div className="space-y-2">
+            {adiantamentos.map(ad => {
+              const aplicado = aplicados.some(a => a.id === ad.id);
+              return (
+                <div key={ad.id} className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${aplicado ? 'bg-green-100 border border-green-300' : 'bg-white border border-amber-200'}`}>
+                  <div>
+                    <span className="font-semibold text-gray-800">R$ {formatCurrency(ad.valor)}</span>
+                    <span className="text-gray-500 ml-2">pago em {ad.data?.split('-').reverse().join('/')} ({ad.forma})</span>
+                    {ad.observacao && <span className="text-gray-400 ml-2">· {ad.observacao}</span>}
+                    {aplicado && <span className="ml-2 text-green-700 font-medium">✓ aplicado</span>}
+                  </div>
+                  {aplicado ? (
+                    <button type="button" onClick={() => removerAdiantamento(ad.id)} className="text-xs text-gray-500 border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50">Remover</button>
+                  ) : (
+                    <button type="button" onClick={() => aplicarAdiantamento(ad)} className="text-xs text-white bg-primary rounded-lg px-3 py-1.5 hover:bg-primary-hover">Aplicar à comanda</button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* DATA */}
       <section className="bg-white rounded-lg shadow-sm border p-4 mb-4">
@@ -505,8 +559,9 @@ export default function NovoAtendimento() {
           <div className="mt-3 pt-3 border-t text-sm space-y-1">
             <div className="flex justify-between"><span className="text-gray-500">Total dos itens:</span><span className="font-medium">R$ {formatCurrency(totalItens)}</span></div>
             {pagamentos.filter(p => p.forma === 'desconto_taxa').reduce((s,p) => s+(Number(p.valor)||0),0) > 0 && <div className="flex justify-between text-yellow-600"><span>(-) Desconto taxa:</span><span className="font-medium">- R$ {formatCurrency(pagamentos.filter(p => p.forma === 'desconto_taxa').reduce((s,p) => s+(Number(p.valor)||0),0))}</span></div>}
-            {pagamentos.filter(p => p.forma === 'pago_antecipado').reduce((s,p) => s+(Number(p.valor)||0),0) > 0 && <div className="flex justify-between text-yellow-600"><span>(-) Pago antecipado:</span><span className="font-medium">- R$ {formatCurrency(pagamentos.filter(p => p.forma === 'pago_antecipado').reduce((s,p) => s+(Number(p.valor)||0),0))}</span></div>}
-            <div className="flex justify-between"><span className="text-gray-500">Total pago:</span><span className="font-medium">R$ {formatCurrency(totalPago - totalDesconto)}</span></div>
+            {totalAntecipado > 0 && <div className="flex justify-between text-yellow-600"><span>(-) Pago antecipado (vinculado):</span><span className="font-medium">- R$ {formatCurrency(totalAntecipado)}</span></div>}
+            <div className="flex justify-between"><span className="text-gray-500">Total a pagar hoje:</span><span className="font-medium">R$ {formatCurrency(Math.max(0, totalAPagar))}</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Total pago:</span><span className="font-medium">R$ {formatCurrency(totalPagoReal)}</span></div>
             <div className="flex justify-between">
               <span className="text-gray-500">Diferenca:</span>
               <span className={`font-semibold ${Math.abs(diferenca) < 0.02 ? 'text-alert-ok' : 'text-alert-danger'}`}>

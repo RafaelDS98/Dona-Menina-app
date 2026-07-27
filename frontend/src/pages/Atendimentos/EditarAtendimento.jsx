@@ -6,13 +6,17 @@ import Modal from '../../components/Modal.jsx';
 import FormField from '../../components/FormField.jsx';
 import Autocomplete from '../../components/Autocomplete.jsx';
 
+// Mesma lista do Novo Atendimento ('taxa' mantida por compatibilidade com comandas antigas)
 const FORMAS_PAGAMENTO = [
   { value: 'pix', label: 'PIX' },
   { value: 'credito', label: 'Crédito' },
   { value: 'debito', label: 'Débito' },
   { value: 'especie', label: 'Dinheiro' },
   { value: 'taxa', label: 'Taxa de agendamento (R$ 30)' },
+  { value: 'desconto_taxa', label: 'Desconto taxa de agendamento (R$ 30)' },
+  { value: 'pago_antecipado', label: 'Pago antecipado (vinculado)' },
 ];
+const ABATIMENTOS = ['desconto_taxa', 'pago_antecipado'];
 
 function formatCurrency(value) {
   return Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
@@ -37,6 +41,7 @@ export default function EditarAtendimento() {
   const [itens, setItens] = useState([]);
   const [pagamentos, setPagamentos] = useState([]);
   const [observacao, setObservacao] = useState('');
+  const [cortesia, setCortesia] = useState(false);
 
   const [addingType, setAddingType] = useState(null);
   const [itemServicoId, setItemServicoId] = useState('');
@@ -65,6 +70,7 @@ export default function EditarAtendimento() {
       setData(dt);
       setHora(hr);
       setObservacao(atd.observacao || '');
+      setCortesia(Number(atd.cortesia) === 1);
 
       setItens(atd.itens.map(item => ({
         tipo: item.tipo,
@@ -92,16 +98,17 @@ export default function EditarAtendimento() {
   }, [id]);
 
   const fetchClientes = useCallback(async (query) => {
-    return api.get('/clientes?busca=' + encodeURIComponent(query));
+    return api.get('/clientes?q=' + encodeURIComponent(query));
   }, []);
 
   const totalItens = itens.reduce((s, i) => s + Number(i.preco_cobrado), 0);
-  const totalPago = pagamentos.reduce((s, p) => s + (Number(p.valor) || 0), 0);
-  const diferenca = totalItens - totalPago;
+  const totalAbatimentos = pagamentos.filter(p => ABATIMENTOS.includes(p.forma)).reduce((s, p) => s + (Number(p.valor) || 0), 0);
+  const totalPagoReal = pagamentos.filter(p => !ABATIMENTOS.includes(p.forma)).reduce((s, p) => s + (Number(p.valor) || 0), 0);
+  const diferenca = (totalItens - totalAbatimentos) - totalPagoReal;
 
-  const canSubmit = cliente && itens.length > 0 &&
-    pagamentos.every(p => p.forma && Number(p.valor) > 0) &&
-    Math.abs(diferenca) < 0.02 && !salvando;
+  const canSubmit = cliente && itens.length > 0 && !salvando && (
+    cortesia || (pagamentos.every(p => p.forma && Number(p.valor) > 0) && Math.abs(diferenca) < 0.02)
+  );
 
   const somaPercColabs = itemColabs.reduce((s, c) => s + (Number(c.percentual) || 0), 0);
   const currentItemValid = (() => {
@@ -201,6 +208,7 @@ export default function EditarAtendimento() {
     setPagamentos(prev => prev.map((p, i) => {
       if (i !== idx) return p;
       if (field === 'forma' && value === 'taxa') return { ...p, forma: 'taxa', valor: '30' };
+      if (field === 'forma' && value === 'desconto_taxa') return { ...p, forma: 'desconto_taxa', valor: '30' };
       return { ...p, [field]: value };
     }));
   }
@@ -231,7 +239,8 @@ export default function EditarAtendimento() {
         cliente_id: cliente.id,
         data_hora,
         observacao: observacao || null,
-        pagamentos: pagamentos.map(p => ({ forma: p.forma, valor: Number(p.valor) })),
+        cortesia,
+        pagamentos: cortesia ? [] : pagamentos.map(p => ({ forma: p.forma, valor: Number(p.valor) })),
         itens: itens.map(item => ({
           tipo: item.tipo,
           servico_id: item.servico_id || null,
@@ -447,20 +456,26 @@ export default function EditarAtendimento() {
         )}
       </section>
 
-      {/* PAGAMENTO */}
+      {/* PAGAMENTO — comanda cortesia nao exige pagamentos */}
+      {cortesia ? (
+        <section className="bg-pink-50 border border-pink-200 rounded-lg p-4 mb-4 text-sm text-pink-700">
+          🎁 Esta comanda é uma <strong>cortesia</strong> — a cliente não é cobrada e a marcação será mantida ao salvar. As comissões continuam calculadas normalmente.
+        </section>
+      ) : (
       <section className="bg-white rounded-lg shadow-sm border p-4 mb-4">
         <h3 className="font-semibold text-gray-700 mb-3">Pagamento</h3>
         {pagamentos.map((pag, idx) => (
           <div key={idx} className="flex items-center gap-2 mb-2">
             <select value={pag.forma} onChange={e => updatePagamento(idx, 'forma', e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary">
+              disabled={pag.forma === 'pago_antecipado'}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary disabled:bg-gray-100 disabled:text-gray-500">
               {FORMAS_PAGAMENTO.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
             </select>
             <span className="text-sm text-gray-500">R$</span>
             <input type="number" step="0.01" min="0" value={pag.valor}
               onChange={e => updatePagamento(idx, 'valor', e.target.value)}
-              readOnly={pag.forma === 'taxa'}
-              className={`w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary ${pag.forma === 'taxa' ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`} />
+              readOnly={pag.forma === 'taxa' || pag.forma === 'desconto_taxa' || pag.forma === 'pago_antecipado'}
+              className={`w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary ${['taxa','desconto_taxa','pago_antecipado'].includes(pag.forma) ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`} />
             {pagamentos.length > 1 && (
               <button onClick={() => setPagamentos(prev => prev.filter((_, i) => i !== idx))} className="text-alert-danger text-lg">×</button>
             )}
@@ -471,7 +486,8 @@ export default function EditarAtendimento() {
 
         <div className="mt-3 pt-3 border-t text-sm space-y-1">
           <div className="flex justify-between"><span className="text-gray-500">Total dos itens:</span><span className="font-medium">R$ {formatCurrency(totalItens)}</span></div>
-          <div className="flex justify-between"><span className="text-gray-500">Total pago:</span><span className="font-medium">R$ {formatCurrency(totalPago)}</span></div>
+          {totalAbatimentos > 0 && <div className="flex justify-between text-yellow-600"><span>(-) Abatimentos (antecipado/desconto):</span><span className="font-medium">- R$ {formatCurrency(totalAbatimentos)}</span></div>}
+          <div className="flex justify-between"><span className="text-gray-500">Total pago:</span><span className="font-medium">R$ {formatCurrency(totalPagoReal)}</span></div>
           <div className="flex justify-between">
             <span className="text-gray-500">Diferença:</span>
             <span className={`font-semibold ${Math.abs(diferenca) < 0.02 ? 'text-alert-ok' : 'text-alert-danger'}`}>
@@ -482,6 +498,7 @@ export default function EditarAtendimento() {
           </div>
         </div>
       </section>
+      )}
 
       {/* OBSERVAÇÃO */}
       <section className="bg-white rounded-lg shadow-sm border p-4 mb-4">
