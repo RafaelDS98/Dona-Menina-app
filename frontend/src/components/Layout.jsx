@@ -8,6 +8,7 @@ const menuItems = [
   { path: '/financeiro', label: 'Financeiro', icon: '💰' },
   { path: '/estoque', label: 'Estoque', icon: '📦' },
   { path: '/marketing', label: 'Marketing', icon: '📣' },
+  { path: '/diretoria', label: 'Diretoria', icon: '📈' },
   { path: '/configuracoes', label: 'Config.', icon: '⚙️' },
 ];
 
