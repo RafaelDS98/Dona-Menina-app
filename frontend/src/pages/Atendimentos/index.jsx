@@ -16,9 +16,9 @@ function formatDate(dataHora) {
 
 function formatFormasPag(pagamentos) {
   if (!pagamentos || pagamentos.length === 0) return '—';
-  const map = { pix: 'PIX', credito: 'CRÉDITO', debito: 'DÉBITO', especie: 'DINHEIRO', taxa: 'TAXA AGEND.', desconto_taxa: 'TAXA AGEND.', pago_antecipado: 'ANTECIPADO' };
+  const map = { pix: 'PIX', credito: 'CRÉDITO', debito: 'DÉBITO', especie: 'DINHEIRO', taxa: 'TAXA AGEND.', desconto_taxa: 'TAXA AGEND.', pago_antecipado: 'ANTECIPADO', desconto: 'DESCONTO' };
   return pagamentos
-    .filter(p => p.forma !== 'desconto_taxa' && p.forma !== 'pago_antecipado')
+    .filter(p => !['desconto_taxa', 'pago_antecipado', 'desconto'].includes(p.forma))
     .map(p => map[p.forma] || p.forma)
     .join(' + ') || 'ANTECIPADO';
 }

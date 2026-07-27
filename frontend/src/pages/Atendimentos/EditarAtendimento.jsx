@@ -15,8 +15,9 @@ const FORMAS_PAGAMENTO = [
   { value: 'taxa', label: 'Taxa de agendamento (R$ 30)' },
   { value: 'desconto_taxa', label: 'Desconto taxa de agendamento (R$ 30)' },
   { value: 'pago_antecipado', label: 'Pago antecipado (vinculado)' },
+  { value: 'desconto', label: 'Desconto (abatimento — exige motivo)' },
 ];
-const ABATIMENTOS = ['desconto_taxa', 'pago_antecipado'];
+const ABATIMENTOS = ['desconto_taxa', 'pago_antecipado', 'desconto'];
 
 function formatCurrency(value) {
   return Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
@@ -87,7 +88,7 @@ export default function EditarAtendimento() {
         })),
       })));
 
-      setPagamentos(atd.pagamentos.map(p => ({ forma: p.forma, valor: String(p.valor) })));
+      setPagamentos(atd.pagamentos.map(p => ({ forma: p.forma, valor: String(p.valor), observacao: p.observacao || '' })));
       setServicos(Array.isArray(s) ? s : []);
       setColaboradoras(Array.isArray(c) ? c.filter(x => x.ativa) : []);
       setProdutosLojinha(Array.isArray(p) ? p : []);
@@ -106,8 +107,9 @@ export default function EditarAtendimento() {
   const totalPagoReal = pagamentos.filter(p => !ABATIMENTOS.includes(p.forma)).reduce((s, p) => s + (Number(p.valor) || 0), 0);
   const diferenca = (totalItens - totalAbatimentos) - totalPagoReal;
 
+  const descontosValidos = pagamentos.every(p => p.forma !== 'desconto' || (p.observacao || '').trim());
   const canSubmit = cliente && itens.length > 0 && !salvando && (
-    cortesia || (pagamentos.every(p => p.forma && Number(p.valor) > 0) && Math.abs(diferenca) < 0.02)
+    cortesia || (pagamentos.every(p => p.forma && Number(p.valor) > 0) && descontosValidos && Math.abs(diferenca) < 0.02)
   );
 
   const somaPercColabs = itemColabs.reduce((s, c) => s + (Number(c.percentual) || 0), 0);
@@ -240,7 +242,7 @@ export default function EditarAtendimento() {
         data_hora,
         observacao: observacao || null,
         cortesia,
-        pagamentos: cortesia ? [] : pagamentos.map(p => ({ forma: p.forma, valor: Number(p.valor) })),
+        pagamentos: cortesia ? [] : pagamentos.map(p => ({ forma: p.forma, valor: Number(p.valor), observacao: (p.observacao || '').trim() || null })),
         itens: itens.map(item => ({
           tipo: item.tipo,
           servico_id: item.servico_id || null,
@@ -476,6 +478,11 @@ export default function EditarAtendimento() {
               onChange={e => updatePagamento(idx, 'valor', e.target.value)}
               readOnly={pag.forma === 'taxa' || pag.forma === 'desconto_taxa' || pag.forma === 'pago_antecipado'}
               className={`w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary ${['taxa','desconto_taxa','pago_antecipado'].includes(pag.forma) ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`} />
+            {pag.forma === 'desconto' && (
+              <input type="text" value={pag.observacao || ''} onChange={e => updatePagamento(idx, 'observacao', e.target.value)}
+                placeholder="Motivo do desconto (obrigatório)"
+                className="flex-1 border border-amber-300 bg-amber-50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            )}
             {pagamentos.length > 1 && (
               <button onClick={() => setPagamentos(prev => prev.filter((_, i) => i !== idx))} className="text-alert-danger text-lg">×</button>
             )}

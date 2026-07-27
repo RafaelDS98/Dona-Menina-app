@@ -12,6 +12,7 @@ const FORMAS_PAGAMENTO = [
   { value: 'debito', label: 'Débito' },
   { value: 'especie', label: 'Dinheiro' },
   { value: 'desconto_taxa', label: 'Desconto taxa de agendamento (R$ 30)' },
+  { value: 'desconto', label: 'Desconto (abatimento — exige motivo)' },
   // 'pago_antecipado' nao e mais digitado a mao: entra automaticamente ao aplicar
   // um adiantamento registrado em Financeiro > Adiantamentos (evita duplicata)
 ];
@@ -130,15 +131,17 @@ export default function NovoAtendimento() {
 
   const totalItens = itens.reduce((s, i) => s + Number(i.preco_cobrado), 0);
   const totalAntecipado = aplicados.reduce((s, a) => s + Number(a.valor), 0);
-  const totalDesconto = pagamentos.filter(p => p.forma === 'desconto_taxa').reduce((s, p) => s + (Number(p.valor) || 0), 0) + totalAntecipado;
+  const ABATIMENTOS_MANUAIS = ['desconto_taxa', 'desconto'];
+  const totalDesconto = pagamentos.filter(p => ABATIMENTOS_MANUAIS.includes(p.forma)).reduce((s, p) => s + (Number(p.valor) || 0), 0) + totalAntecipado;
   const totalAPagar = totalItens - totalDesconto;
-  const totalPagoReal = pagamentos.filter(p => p.forma !== 'desconto_taxa').reduce((s, p) => s + (Number(p.valor) || 0), 0);
+  const totalPagoReal = pagamentos.filter(p => !ABATIMENTOS_MANUAIS.includes(p.forma)).reduce((s, p) => s + (Number(p.valor) || 0), 0);
   const diferenca = totalAPagar - totalPagoReal;
 
   const itensValidos = itens.length > 0;
   const manualComValor = pagamentos.filter(p => Number(p.valor) > 0);
   const manualInvalido = pagamentos.some(p => p.valor !== '' && !(Number(p.valor) > 0));
-  const pagamentosValidos = cortesia || (!manualInvalido && (manualComValor.length > 0 || (totalAntecipado > 0 && totalAPagar < 0.02)));
+  const descontosValidos = pagamentos.every(p => p.forma !== 'desconto' || (Number(p.valor) > 0 && (p.observacao || '').trim()));
+  const pagamentosValidos = cortesia || (!manualInvalido && descontosValidos && (manualComValor.length > 0 || (totalAntecipado > 0 && totalAPagar < 0.02)));
   const diferencaOk = cortesia || Math.abs(diferenca) < 0.02;
   const clienteOk = !!cliente;
   const canSubmit = clienteOk && itensValidos && pagamentosValidos && diferencaOk && !salvando;
@@ -255,7 +258,7 @@ export default function NovoAtendimento() {
         cortesia,
         adiantamento_ids: cortesia ? [] : aplicados.map(a => a.id),
         pagamentos: cortesia ? [] : [
-          ...pagamentos.filter(p => Number(p.valor) > 0).map(p => ({ forma: p.forma, valor: Number(p.valor) })),
+          ...pagamentos.filter(p => Number(p.valor) > 0).map(p => ({ forma: p.forma, valor: Number(p.valor), observacao: (p.observacao || '').trim() || null })),
           ...aplicados.map(a => ({ forma: 'pago_antecipado', valor: Number(a.valor) })),
         ],
         itens: itens.map(i => ({
@@ -552,6 +555,11 @@ export default function NovoAtendimento() {
                   readOnly={pag.forma === 'desconto_taxa'} placeholder="0,00"
                   className={`w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${pag.forma === 'desconto_taxa' ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`} />
               </div>
+              {pag.forma === 'desconto' && (
+                <input type="text" value={pag.observacao || ''} onChange={(e) => updatePagamento(idx, 'observacao', e.target.value)}
+                  placeholder="Motivo do desconto (obrigatório)"
+                  className="flex-1 border border-amber-300 bg-amber-50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              )}
               {pagamentos.length > 1 && <button type="button" onClick={() => removePagamento(idx)} className="text-alert-danger hover:text-red-700 text-lg leading-none">&times;</button>}
             </div>
           ))}
@@ -559,6 +567,7 @@ export default function NovoAtendimento() {
           <div className="mt-3 pt-3 border-t text-sm space-y-1">
             <div className="flex justify-between"><span className="text-gray-500">Total dos itens:</span><span className="font-medium">R$ {formatCurrency(totalItens)}</span></div>
             {pagamentos.filter(p => p.forma === 'desconto_taxa').reduce((s,p) => s+(Number(p.valor)||0),0) > 0 && <div className="flex justify-between text-yellow-600"><span>(-) Desconto taxa:</span><span className="font-medium">- R$ {formatCurrency(pagamentos.filter(p => p.forma === 'desconto_taxa').reduce((s,p) => s+(Number(p.valor)||0),0))}</span></div>}
+            {pagamentos.filter(p => p.forma === 'desconto').reduce((s,p) => s+(Number(p.valor)||0),0) > 0 && <div className="flex justify-between text-yellow-600"><span>(-) Desconto:</span><span className="font-medium">- R$ {formatCurrency(pagamentos.filter(p => p.forma === 'desconto').reduce((s,p) => s+(Number(p.valor)||0),0))}</span></div>}
             {totalAntecipado > 0 && <div className="flex justify-between text-yellow-600"><span>(-) Pago antecipado (vinculado):</span><span className="font-medium">- R$ {formatCurrency(totalAntecipado)}</span></div>}
             <div className="flex justify-between"><span className="text-gray-500">Total a pagar hoje:</span><span className="font-medium">R$ {formatCurrency(Math.max(0, totalAPagar))}</span></div>
             <div className="flex justify-between"><span className="text-gray-500">Total pago:</span><span className="font-medium">R$ {formatCurrency(totalPagoReal)}</span></div>

@@ -2,8 +2,8 @@ import { Router } from 'express';
 import pool from '../database/db.js';
 
 const router = Router();
-const FORMAS_PAGAMENTO = ['pix', 'credito', 'debito', 'especie', 'taxa', 'desconto_taxa', 'pago_antecipado'];
-const ABATIMENTOS = ['desconto_taxa', 'pago_antecipado'];
+const FORMAS_PAGAMENTO = ['pix', 'credito', 'debito', 'especie', 'taxa', 'desconto_taxa', 'pago_antecipado', 'desconto'];
+const ABATIMENTOS = ['desconto_taxa', 'pago_antecipado', 'desconto'];
 
 const round2 = (v) => Math.round(Number(v) * 100) / 100;
 const numOk = (v) => Number.isFinite(Number(v));
@@ -26,6 +26,7 @@ function validarComanda({ itens, pagamentos, cortesia }) {
   for (const pag of pagamentos) {
     if (!FORMAS_PAGAMENTO.includes(pag.forma)) return `Forma invalida: ${pag.forma}`;
     if (!numOk(pag.valor) || Number(pag.valor) <= 0) return `Valor invalido no pagamento (${pag.forma})`;
+    if (pag.forma === 'desconto' && !(pag.observacao || '').trim()) return 'Informe o motivo do desconto';
   }
   const somaDesconto = round2(pagamentos.filter(p => ABATIMENTOS.includes(p.forma)).reduce((s, p) => s + Number(p.valor), 0));
   const somaPagamentos = round2(pagamentos.filter(p => !ABATIMENTOS.includes(p.forma)).reduce((s, p) => s + Number(p.valor), 0));
@@ -152,7 +153,7 @@ router.post('/', async (req, res) => {
 
     if (!cortesia && pagamentos?.length) {
       for (const pag of pagamentos) {
-        await client.query('INSERT INTO atendimento_pagamentos (atendimento_id, forma, valor) VALUES ($1, $2, $3)', [atendimentoId, pag.forma, round2(pag.valor)]);
+        await client.query('INSERT INTO atendimento_pagamentos (atendimento_id, forma, valor, observacao) VALUES ($1, $2, $3, $4)', [atendimentoId, pag.forma, round2(pag.valor), (pag.observacao || '').trim() || null]);
       }
     }
 
@@ -245,7 +246,7 @@ router.put('/:id', async (req, res) => {
 
     if (!cortesia && pagamentos?.length) {
       for (const pag of pagamentos) {
-        await client.query('INSERT INTO atendimento_pagamentos (atendimento_id, forma, valor) VALUES ($1, $2, $3)', [atd.id, pag.forma, round2(pag.valor)]);
+        await client.query('INSERT INTO atendimento_pagamentos (atendimento_id, forma, valor, observacao) VALUES ($1, $2, $3, $4)', [atd.id, pag.forma, round2(pag.valor), (pag.observacao || '').trim() || null]);
       }
     }
 

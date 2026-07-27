@@ -69,7 +69,7 @@ router.get('/', async (req, res) => {
       FROM atendimento_pagamentos ap
       JOIN atendimentos a ON a.id=ap.atendimento_id
       WHERE a.cancelado=0 AND DATE(a.data_hora)=$1
-        AND ap.forma != 'desconto_taxa' AND ap.forma != 'pago_antecipado'
+        AND ap.forma NOT IN ('desconto_taxa', 'pago_antecipado', 'desconto')
       GROUP BY ap.forma ORDER BY total DESC
     `, [hoje]);
 

@@ -3,7 +3,7 @@ import pool from '../database/db.js';
 
 const router = Router();
 
-const ABATIMENTOS = ['desconto_taxa', 'pago_antecipado'];
+const ABATIMENTOS = ['desconto_taxa', 'pago_antecipado', 'desconto'];
 
 function normalizarForma(forma) {
   const mapa = {
@@ -15,6 +15,7 @@ function normalizarForma(forma) {
     taxa: 'Taxa de agendamento',
     desconto_taxa: 'Desconto taxa (abatimento)',
     pago_antecipado: 'Pago antecipado (abatimento)',
+    desconto: 'Desconto (abatimento)',
   };
   return mapa[forma?.toLowerCase()] || forma;
 }
@@ -46,7 +47,7 @@ router.get('/', async (req, res) => {
         itensDetalhados.push({ ...item, colaboradoras: colResult.rows.map(c => c.nome) });
       }
 
-      const pagResult = await pool.query('SELECT forma, valor FROM atendimento_pagamentos WHERE atendimento_id=$1 ORDER BY forma', [atd.id]);
+      const pagResult = await pool.query('SELECT forma, valor, observacao FROM atendimento_pagamentos WHERE atendimento_id=$1 ORDER BY forma', [atd.id]);
       atendimentosDetalhados.push({
         numero: idx + 1,
         cliente: atd.cliente || 'Sem cliente',

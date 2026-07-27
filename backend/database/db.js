@@ -267,6 +267,7 @@ export async function initSchema() {
     // ---- Migracoes incrementais (rodam SEMPRE, em banco novo ou existente) ----
     await client.query(`ALTER TABLE atendimentos ADD COLUMN IF NOT EXISTS cortesia INTEGER NOT NULL DEFAULT 0`);
     await client.query(`ALTER TABLE atendimento_itens ADD COLUMN IF NOT EXISTS cortesia INTEGER NOT NULL DEFAULT 0`);
+    await client.query(`ALTER TABLE atendimento_pagamentos ADD COLUMN IF NOT EXISTS observacao TEXT`);
 
     // Adiantamentos (sinais pagos antecipadamente pelas clientes)
     await client.query(`

@@ -41,7 +41,7 @@ export function gerarTextofechamento(dados) {
       texto += `Formas de pagamento:\n`;
       atd.pagamentos.forEach(pag => {
         const forma = normalizarForma(pag.forma);
-        texto += `  ${forma}: R$ ${formatarMoeda(pag.valor)}\n`;
+        texto += `  ${forma}: R$ ${formatarMoeda(pag.valor)}${pag.observacao ? ` (${pag.observacao})` : ''}\n`;
       });
     } else if (atd.pagamentos.length === 1) {
       const forma = normalizarForma(atd.pagamentos[0].forma);
@@ -105,6 +105,7 @@ function normalizarForma(forma) {
     'taxa': 'Taxa de agendamento',
     'desconto_taxa': 'Desconto taxa (abatimento)',
     'pago_antecipado': 'Pago antecipado (abatimento)',
+    'desconto': 'Desconto (abatimento)',
   };
   return mapa[forma?.toLowerCase()] || forma;
 }
