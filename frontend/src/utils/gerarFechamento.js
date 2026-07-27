@@ -1,5 +1,5 @@
 export function gerarTextofechamento(dados) {
-  const { data_formatada, atendimentos, totais_por_forma, total_dia } = dados;
+  const { data_formatada, atendimentos, totais_por_forma, total_dia, abatimentos, adiantamentos_recebidos, total_adiantamentos, total_caixa } = dados;
 
   let texto = '';
 
@@ -41,7 +41,7 @@ export function gerarTextofechamento(dados) {
       texto += `Formas de pagamento:\n`;
       atd.pagamentos.forEach(pag => {
         const forma = normalizarForma(pag.forma);
-        texto += `  ${forma}: R$ ${formatarMoeda(pag.valor)}\n`;
+        texto += `  ${forma}: R$ ${formatarMoeda(pag.valor)}${pag.observacao ? ` (${pag.observacao})` : ''}\n`;
       });
     } else if (atd.pagamentos.length === 1) {
       const forma = normalizarForma(atd.pagamentos[0].forma);
@@ -59,8 +59,30 @@ export function gerarTextofechamento(dados) {
     texto += `  ${forma}: R$ ${formatarMoeda(valor)}\n`;
   });
 
+  // Abatimentos (nao sao dinheiro recebido no dia — apenas informativo)
+  if (abatimentos && Object.keys(abatimentos).length > 0) {
+    texto += '─'.repeat(65) + '\n';
+    texto += 'Abatimentos (ja pagos antes / descontos — fora do caixa de hoje):\n';
+    Object.entries(abatimentos).forEach(([forma, valor]) => {
+      texto += `  ${forma}: R$ ${formatarMoeda(valor)}\n`;
+    });
+  }
+
+  // Adiantamentos (sinais) recebidos HOJE — dinheiro que entrou no caixa
+  if (adiantamentos_recebidos && adiantamentos_recebidos.length > 0) {
+    texto += '─'.repeat(65) + '\n';
+    texto += 'Adiantamentos recebidos hoje (sinais):\n';
+    adiantamentos_recebidos.forEach(ad => {
+      texto += `  ${ad.cliente} — R$ ${formatarMoeda(ad.valor)} (${ad.forma})${ad.observacao ? ` · ${ad.observacao}` : ''}\n`;
+    });
+    texto += `  Total adiantamentos: R$ ${formatarMoeda(total_adiantamentos || 0)}\n`;
+  }
+
   texto += '─'.repeat(65) + '\n';
-  texto += `TOTAL DO DIA: R$ ${formatarMoeda(total_dia)}\n`;
+  texto += `TOTAL RECEBIDO EM COMANDAS: R$ ${formatarMoeda(total_dia)}\n`;
+  if (total_adiantamentos > 0) {
+    texto += `TOTAL EM CAIXA (comandas + adiantamentos): R$ ${formatarMoeda(total_caixa ?? total_dia)}\n`;
+  }
   texto += '═'.repeat(65) + '\n';
 
   return texto;
@@ -76,10 +98,14 @@ function formatarMoeda(valor) {
 function normalizarForma(forma) {
   const mapa = {
     'dinheiro': 'Dinheiro',
+    'especie': 'Dinheiro',
     'credito': 'Crédito',
     'debito': 'Débito',
     'pix': 'Pix',
-    'desconto_taxa': 'Desconto taxa',
+    'taxa': 'Taxa de agendamento',
+    'desconto_taxa': 'Desconto taxa (abatimento)',
+    'pago_antecipado': 'Pago antecipado (abatimento)',
+    'desconto': 'Desconto (abatimento)',
   };
   return mapa[forma?.toLowerCase()] || forma;
 }

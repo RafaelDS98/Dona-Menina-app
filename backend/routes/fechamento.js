@@ -3,8 +3,20 @@ import pool from '../database/db.js';
 
 const router = Router();
 
+const ABATIMENTOS = ['desconto_taxa', 'pago_antecipado', 'desconto'];
+
 function normalizarForma(forma) {
-  const mapa = { dinheiro: 'Dinheiro', credito: 'Crédito', debito: 'Débito', pix: 'Pix', desconto_taxa: 'Desconto taxa' };
+  const mapa = {
+    dinheiro: 'Dinheiro',
+    especie: 'Dinheiro',
+    credito: 'Crédito',
+    debito: 'Débito',
+    pix: 'Pix',
+    taxa: 'Taxa de agendamento',
+    desconto_taxa: 'Desconto taxa (abatimento)',
+    pago_antecipado: 'Pago antecipado (abatimento)',
+    desconto: 'Desconto (abatimento)',
+  };
   return mapa[forma?.toLowerCase()] || forma;
 }
 
@@ -35,31 +47,54 @@ router.get('/', async (req, res) => {
         itensDetalhados.push({ ...item, colaboradoras: colResult.rows.map(c => c.nome) });
       }
 
-      const pagResult = await pool.query('SELECT forma, valor FROM atendimento_pagamentos WHERE atendimento_id=$1 ORDER BY forma', [atd.id]);
+      const pagResult = await pool.query('SELECT forma, valor, observacao FROM atendimento_pagamentos WHERE atendimento_id=$1 ORDER BY forma', [atd.id]);
       atendimentosDetalhados.push({
         numero: idx + 1,
         cliente: atd.cliente || 'Sem cliente',
         itens: itensDetalhados,
         pagamentos: pagResult.rows,
-        valor_total: itensDetalhados.reduce((s, i) => s + Number(i.preco_cobrado), 0),
+        valor_total: Math.round(itensDetalhados.reduce((s, i) => s + Number(i.preco_cobrado), 0) * 100) / 100,
       });
     }
 
+    // Dinheiro que ENTROU de fato no dia (abatimentos ficam separados — nao sao recebimento)
     const totaisPorForma = {};
+    const abatimentos = {};
     atendimentosDetalhados.forEach(atd => {
       atd.pagamentos.forEach(pag => {
+        const alvo = ABATIMENTOS.includes(pag.forma) ? abatimentos : totaisPorForma;
         const forma = normalizarForma(pag.forma);
-        totaisPorForma[forma] = (totaisPorForma[forma] || 0) + Number(pag.valor);
+        alvo[forma] = (alvo[forma] || 0) + Number(pag.valor);
       });
     });
     const totalDia = Object.values(totaisPorForma).reduce((s, v) => s + v, 0);
+    Object.keys(totaisPorForma).forEach(k => { totaisPorForma[k] = Math.round(totaisPorForma[k] * 100) / 100; });
+    Object.keys(abatimentos).forEach(k => { abatimentos[k] = Math.round(abatimentos[k] * 100) / 100; });
+
+    // Adiantamentos (sinais) recebidos NESTE dia tambem sao dinheiro em caixa
+    const adResult = await pool.query(`
+      SELECT ad.id, ad.valor, ad.forma, ad.observacao, c.nome as cliente
+      FROM adiantamentos ad LEFT JOIN clientes c ON c.id=ad.cliente_id
+      WHERE ad.data=$1 AND ad.status != 'devolvido' ORDER BY ad.id
+    `, [data]);
+    const adiantamentosRecebidos = adResult.rows.map(a => ({
+      cliente: a.cliente || 'Sem cliente',
+      valor: Number(a.valor),
+      forma: normalizarForma(a.forma),
+      observacao: a.observacao,
+    }));
+    const totalAdiantamentos = Math.round(adiantamentosRecebidos.reduce((s, a) => s + a.valor, 0) * 100) / 100;
 
     res.json({ ok: true, data: {
       data,
       data_formatada: new Date(data + 'T00:00').toLocaleDateString('pt-BR'),
       atendimentos: atendimentosDetalhados,
       totais_por_forma: totaisPorForma,
+      abatimentos,
+      adiantamentos_recebidos: adiantamentosRecebidos,
+      total_adiantamentos: totalAdiantamentos,
       total_dia: Math.round(totalDia * 100) / 100,
+      total_caixa: Math.round((totalDia + totalAdiantamentos) * 100) / 100,
     }});
   } catch (e) {
     console.error('Erro fechamento:', e);

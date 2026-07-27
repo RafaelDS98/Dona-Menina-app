@@ -15,6 +15,8 @@ import backupRouter from './routes/backup.js';
 import configuracoesRouter from './routes/configuracoes.js';
 import dashboardRouter from './routes/dashboard.js';
 import marketingRouter from './routes/marketing.js';
+import diretoriaRouter from './routes/diretoria.js';
+import adiantamentosRouter from './routes/adiantamentos.js';
 const app = express();
 const PORT = process.env.PORT || 4000;
 app.use(cors({ origin: ['http://localhost:3000', 'https://awake-delight-production-083e.up.railway.app'], credentials: true }));
@@ -33,6 +35,8 @@ app.use('/api/backup', backupRouter);
 app.use('/api/configuracoes', configuracoesRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/marketing', marketingRouter);
+app.use('/api/diretoria', diretoriaRouter);
+app.use('/api/adiantamentos', adiantamentosRouter);
 app.get('/api/health', (req, res) => res.json({ ok: true, data: { status: 'running' } }));
 app.use((err, req, res, next) => { console.error(err.stack); res.status(500).json({ ok: false, error: 'Erro interno' }); });
 initSchema().then(() => {

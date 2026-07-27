@@ -5,10 +5,12 @@ const { Pool, types } = pg;
 types.setTypeParser(1114, str => str); // TIMESTAMP
 types.setTypeParser(1184, str => str); // TIMESTAMPTZ
 types.setTypeParser(1082, str => str); // DATE
+types.setTypeParser(1700, v => (v === null ? null : parseFloat(v))); // NUMERIC → number (colunas de dinheiro)
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  // DATABASE_SSL=off permite rodar contra Postgres local (dev/testes); padrao: SSL como sempre
+  ssl: process.env.DATABASE_SSL === 'off' ? false : { rejectUnauthorized: false },
 });
 
 export async function initSchema() {
@@ -66,13 +68,14 @@ export async function initSchema() {
           id SERIAL PRIMARY KEY,
           cliente_id INTEGER NOT NULL REFERENCES clientes(id),
           data_hora TEXT NOT NULL,
-          valor_total REAL NOT NULL DEFAULT 0,
+          valor_total NUMERIC(10,2) NOT NULL DEFAULT 0,
           observacao TEXT,
           cancelado INTEGER NOT NULL DEFAULT 0,
           status TEXT NOT NULL DEFAULT 'concluida',
-          taxa_agendamento_valor REAL,
+          taxa_agendamento_valor NUMERIC(10,2),
           taxa_agendamento_forma TEXT,
           taxa_lancada_manualmente INTEGER NOT NULL DEFAULT 0,
+          cortesia INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL DEFAULT TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS')
         );
 
@@ -93,7 +96,7 @@ export async function initSchema() {
           id SERIAL PRIMARY KEY,
           atendimento_id INTEGER NOT NULL REFERENCES atendimentos(id) ON DELETE CASCADE,
           forma TEXT NOT NULL,
-          valor REAL NOT NULL
+          valor NUMERIC(10,2) NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS estoque_lojinha (
@@ -131,8 +134,9 @@ export async function initSchema() {
           freezer_id INTEGER REFERENCES estoque_freezer(id),
           promocao_id INTEGER,
           descricao TEXT,
-          preco_cobrado REAL NOT NULL,
-          observacao TEXT
+          preco_cobrado NUMERIC(10,2) NOT NULL,
+          observacao TEXT,
+          cortesia INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS atendimento_item_colaboradoras (
@@ -140,7 +144,7 @@ export async function initSchema() {
           atendimento_item_id INTEGER NOT NULL REFERENCES atendimento_itens(id) ON DELETE CASCADE,
           colaboradora_id INTEGER NOT NULL REFERENCES colaboradoras(id),
           percentual_comissao REAL NOT NULL,
-          valor_comissao REAL NOT NULL
+          valor_comissao NUMERIC(10,2) NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS estoque_kits (
@@ -158,9 +162,9 @@ export async function initSchema() {
           data TEXT NOT NULL,
           descricao TEXT NOT NULL,
           marca TEXT,
-          valor_unit REAL NOT NULL,
+          valor_unit NUMERIC(10,2) NOT NULL,
           quantidade INTEGER NOT NULL DEFAULT 1,
-          valor_total REAL NOT NULL,
+          valor_total NUMERIC(10,2) NOT NULL,
           fornecedor TEXT,
           created_at TEXT NOT NULL DEFAULT TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS')
         );
@@ -258,9 +262,49 @@ export async function initSchema() {
       console.log('Banco PostgreSQL inicializado com sucesso!');
     } else {
       console.log('Banco PostgreSQL existente — conectado!');
-      // Migracoes incrementais
-      await client.query(`ALTER TABLE atendimentos ADD COLUMN IF NOT EXISTS cortesia INTEGER NOT NULL DEFAULT 0`);
-      await client.query(`ALTER TABLE atendimento_itens ADD COLUMN IF NOT EXISTS cortesia INTEGER NOT NULL DEFAULT 0`);
+    }
+
+    // ---- Migracoes incrementais (rodam SEMPRE, em banco novo ou existente) ----
+    await client.query(`ALTER TABLE atendimentos ADD COLUMN IF NOT EXISTS cortesia INTEGER NOT NULL DEFAULT 0`);
+    await client.query(`ALTER TABLE atendimento_itens ADD COLUMN IF NOT EXISTS cortesia INTEGER NOT NULL DEFAULT 0`);
+    await client.query(`ALTER TABLE atendimento_pagamentos ADD COLUMN IF NOT EXISTS observacao TEXT`);
+
+    // Adiantamentos (sinais pagos antecipadamente pelas clientes)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS adiantamentos (
+        id SERIAL PRIMARY KEY,
+        cliente_id INTEGER NOT NULL REFERENCES clientes(id),
+        valor NUMERIC(10,2) NOT NULL,
+        forma TEXT NOT NULL,
+        data TEXT NOT NULL,
+        observacao TEXT,
+        status TEXT NOT NULL DEFAULT 'aberto',
+        atendimento_id INTEGER REFERENCES atendimentos(id),
+        created_at TEXT NOT NULL DEFAULT TO_CHAR(NOW(), 'YYYY-MM-DD HH24:MI:SS')
+      );
+      CREATE INDEX IF NOT EXISTS idx_adiantamentos_cliente ON adiantamentos(cliente_id, status);
+      CREATE INDEX IF NOT EXISTS idx_adiantamentos_data ON adiantamentos(data);
+    `);
+
+    // Dinheiro em NUMERIC(10,2) — converte colunas REAL legadas (uma unica vez cada)
+    const COLUNAS_DINHEIRO = [
+      ['atendimentos', 'valor_total'], ['atendimentos', 'taxa_agendamento_valor'],
+      ['atendimento_pagamentos', 'valor'], ['atendimento_itens', 'preco_cobrado'],
+      ['atendimento_item_colaboradoras', 'valor_comissao'],
+      ['saidas', 'valor_unit'], ['saidas', 'valor_total'],
+      ['servicos', 'preco'], ['promocoes', 'preco'],
+      ['estoque_lojinha', 'preco_custo'], ['estoque_lojinha', 'preco_venda'],
+      ['estoque_freezer', 'preco_custo'], ['estoque_freezer', 'preco_venda'],
+    ];
+    for (const [tabela, coluna] of COLUNAS_DINHEIRO) {
+      const tipo = await client.query(
+        `SELECT data_type FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name=$2`,
+        [tabela, coluna]
+      );
+      if (tipo.rows[0] && tipo.rows[0].data_type !== 'numeric') {
+        await client.query(`ALTER TABLE ${tabela} ALTER COLUMN ${coluna} TYPE NUMERIC(10,2) USING ROUND(${coluna}::numeric, 2)`);
+        console.log(`Migracao: ${tabela}.${coluna} → NUMERIC(10,2)`);
+      }
     }
   } catch (e) {
     console.error('Erro ao inicializar banco:', e);

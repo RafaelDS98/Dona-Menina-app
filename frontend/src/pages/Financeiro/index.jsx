@@ -5,8 +5,9 @@ import Modal from '../../components/Modal.jsx';
 import DataTable from '../../components/DataTable.jsx';
 import ConfirmDialog from '../../components/ConfirmDialog.jsx';
 import FormField from '../../components/FormField.jsx';
+import Adiantamentos from './Adiantamentos.jsx';
 
-const TABS = ['Visao Geral', 'Saidas', 'Promocoes'];
+const TABS = ['Visao Geral', 'Saidas', 'Adiantamentos', 'Promocoes'];
 
 const PERIOD_SHORTCUTS = [
   { label: 'Hoje', key: 'hoje' },
@@ -177,7 +178,8 @@ export default function Financeiro() {
   useEffect(() => {
     if (tab === 0) loadVisaoGeral();
     else if (tab === 1) loadSaidas();
-    else if (tab === 2) { loadPromocoes(); loadServicos(); }
+    else if (tab === 3) { loadPromocoes(); loadServicos(); }
+    // tab === 2 (Adiantamentos) carrega os proprios dados
   }, [tab, qs, loadVisaoGeral, loadSaidas, loadPromocoes, loadServicos]);
 
   // Period filter
@@ -549,8 +551,11 @@ export default function Financeiro() {
         </div>
       )}
 
-      {/* Tab 2 — Promocoes */}
-      {tab === 2 && !loading && (
+      {/* Tab 2 — Adiantamentos */}
+      {tab === 2 && <Adiantamentos />}
+
+      {/* Tab 3 — Promocoes */}
+      {tab === 3 && !loading && (
         <div>
           <div className="flex justify-between items-center mb-4">
             <span className="text-sm text-gray-500">{promocoes.length} promocao(oes)</span>

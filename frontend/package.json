@@ -10,7 +10,8 @@
   "dependencies": {
     "react": "latest",
     "react-dom": "latest",
-    "react-router": "latest"
+    "react-router": "latest",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4",

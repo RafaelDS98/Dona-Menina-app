@@ -75,10 +75,13 @@ router.post('/lojinha', async (req, res) => {
 router.put('/lojinha/:id', async (req, res) => {
   try {
     const { nome, marca, preco_custo, preco_venda, alerta_minimo } = req.body;
+    if (!nome || !Number.isFinite(Number(preco_venda)) || Number(preco_venda) <= 0)
+      return res.status(400).json({ ok: false, error: 'Nome e preco de venda validos sao obrigatorios' });
     const result = await pool.query(
       `UPDATE estoque_lojinha SET nome=$1, marca=$2, preco_custo=$3, preco_venda=$4, alerta_minimo=$5, updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$6 RETURNING *`,
       [nome, marca || null, preco_custo || null, preco_venda, alerta_minimo || 3, req.params.id]
     );
+    if (!result.rows[0]) return res.status(404).json({ ok: false, error: 'Produto nao encontrado' });
     res.json({ ok: true, data: result.rows[0] });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -86,14 +89,16 @@ router.put('/lojinha/:id', async (req, res) => {
 router.patch('/lojinha/:id/estoque', async (req, res) => {
   try {
     const { operacao, valor } = req.body;
-    const prod = await pool.query('SELECT * FROM estoque_lojinha WHERE id=$1', [req.params.id]);
-    if (!prod.rows[0]) return res.status(404).json({ ok: false, error: 'Produto nao encontrado' });
-    let newQty;
-    if (operacao === 'set') newQty = Number(valor);
-    else if (operacao === 'add') newQty = prod.rows[0].quantidade + Number(valor);
-    else if (operacao === 'subtract') newQty = Math.max(0, prod.rows[0].quantidade - Number(valor));
+    const v = Number(valor);
+    if (!Number.isInteger(v) || v < 0) return res.status(400).json({ ok: false, error: 'valor deve ser um numero inteiro nao negativo' });
+    // Operacao atomica no banco: sem read-then-write (evita perda de ajuste simultaneo)
+    let sql;
+    if (operacao === 'set') sql = `UPDATE estoque_lojinha SET quantidade=GREATEST(0,$1), updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$2 RETURNING *`;
+    else if (operacao === 'add') sql = `UPDATE estoque_lojinha SET quantidade=GREATEST(0,quantidade+$1), updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$2 RETURNING *`;
+    else if (operacao === 'subtract') sql = `UPDATE estoque_lojinha SET quantidade=GREATEST(0,quantidade-$1), updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$2 RETURNING *`;
     else return res.status(400).json({ ok: false, error: 'operacao deve ser set, add ou subtract' });
-    const result = await pool.query(`UPDATE estoque_lojinha SET quantidade=$1, updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$2 RETURNING *`, [newQty, req.params.id]);
+    const result = await pool.query(sql, [v, req.params.id]);
+    if (!result.rows[0]) return res.status(404).json({ ok: false, error: 'Produto nao encontrado' });
     res.json({ ok: true, data: result.rows[0] });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -147,10 +152,13 @@ router.post('/freezer', async (req, res) => {
 router.put('/freezer/:id', async (req, res) => {
   try {
     const { nome, marca, preco_custo, preco_venda, alerta_minimo } = req.body;
+    if (!nome || !Number.isFinite(Number(preco_venda)) || Number(preco_venda) <= 0)
+      return res.status(400).json({ ok: false, error: 'Nome e preco de venda validos sao obrigatorios' });
     const result = await pool.query(
       `UPDATE estoque_freezer SET nome=$1, marca=$2, preco_custo=$3, preco_venda=$4, alerta_minimo=$5, updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$6 RETURNING *`,
       [nome, marca || null, preco_custo || null, preco_venda, alerta_minimo || 3, req.params.id]
     );
+    if (!result.rows[0]) return res.status(404).json({ ok: false, error: 'Item nao encontrado' });
     res.json({ ok: true, data: result.rows[0] });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -158,14 +166,15 @@ router.put('/freezer/:id', async (req, res) => {
 router.patch('/freezer/:id/estoque', async (req, res) => {
   try {
     const { operacao, valor } = req.body;
-    const prod = await pool.query('SELECT * FROM estoque_freezer WHERE id=$1', [req.params.id]);
-    if (!prod.rows[0]) return res.status(404).json({ ok: false, error: 'Item nao encontrado' });
-    let newQty;
-    if (operacao === 'set') newQty = Number(valor);
-    else if (operacao === 'add') newQty = prod.rows[0].quantidade + Number(valor);
-    else if (operacao === 'subtract') newQty = Math.max(0, prod.rows[0].quantidade - Number(valor));
+    const v = Number(valor);
+    if (!Number.isInteger(v) || v < 0) return res.status(400).json({ ok: false, error: 'valor deve ser um numero inteiro nao negativo' });
+    let sql;
+    if (operacao === 'set') sql = `UPDATE estoque_freezer SET quantidade=GREATEST(0,$1), updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$2 RETURNING *`;
+    else if (operacao === 'add') sql = `UPDATE estoque_freezer SET quantidade=GREATEST(0,quantidade+$1), updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$2 RETURNING *`;
+    else if (operacao === 'subtract') sql = `UPDATE estoque_freezer SET quantidade=GREATEST(0,quantidade-$1), updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$2 RETURNING *`;
     else return res.status(400).json({ ok: false, error: 'operacao deve ser set, add ou subtract' });
-    const result = await pool.query(`UPDATE estoque_freezer SET quantidade=$1, updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$2 RETURNING *`, [newQty, req.params.id]);
+    const result = await pool.query(sql, [v, req.params.id]);
+    if (!result.rows[0]) return res.status(404).json({ ok: false, error: 'Item nao encontrado' });
     res.json({ ok: true, data: result.rows[0] });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });

@@ -88,9 +88,11 @@ export default function Dashboard() {
     ? data.total_atendimentos_hoje
     : (fechamentoDados ? fechamentoDados.atendimentos?.length : null);
 
+  // Chaves do fechamento ja vem normalizadas ('Pix', 'Crédito'…) — exibe como estao;
+  // pagamentos_hoje vem com a chave crua ('pix') e usa o LABEL_FORMA
   const pagamentos = fechamentoDados?.totais_por_forma
-    ? Object.entries(fechamentoDados.totais_por_forma).map(([forma, total]) => ({ forma: forma.toLowerCase(), total }))
-    : data.pagamentos_hoje || [];
+    ? Object.entries(fechamentoDados.totais_por_forma).map(([forma, total]) => ({ forma, total, rotulo: forma }))
+    : (data.pagamentos_hoje || []).map(p => ({ ...p, rotulo: LABEL_FORMA[p.forma] || p.forma }));
 
   const totalFechamento = isHoje ? data.faturamento_hoje : (fechamentoDados?.total_dia || 0);
 
@@ -178,7 +180,7 @@ export default function Dashboard() {
                         p.forma === 'debito' ? 'bg-purple-400' :
                         p.forma === 'taxa' ? 'bg-yellow-400' : 'bg-gray-400'
                       }`} />
-                      <span className="text-sm text-gray-700">{LABEL_FORMA[p.forma] || p.forma}</span>
+                      <span className="text-sm text-gray-700">{p.rotulo || LABEL_FORMA[p.forma] || p.forma}</span>
                     </div>
                     <span className="text-sm font-semibold text-gray-800">R$ {formatCurrency(p.total)}</span>
                   </div>

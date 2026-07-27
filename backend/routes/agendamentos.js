@@ -57,10 +57,12 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { cliente_id, colaboradora_id, data_hora, servico_id, status, observacao } = req.body;
+    // status ausente no body = mantem o status atual (nao rebaixa 'concluido' para 'agendado')
     const result = await pool.query(`
       UPDATE agendamentos SET cliente_id=$1, colaboradora_id=$2, data_hora=$3, servico_id=$4,
-      status=$5, observacao=$6, updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$7 RETURNING *
-    `, [cliente_id, colaboradora_id || null, data_hora, servico_id || null, status || 'agendado', observacao || null, req.params.id]);
+      status=COALESCE($5, status), observacao=$6, updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$7 RETURNING *
+    `, [cliente_id, colaboradora_id || null, data_hora, servico_id || null, status || null, observacao || null, req.params.id]);
+    if (!result.rows[0]) return res.status(404).json({ ok: false, error: 'Agendamento nao encontrado' });
     res.json({ ok: true, data: result.rows[0] });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -68,17 +70,20 @@ router.put('/:id', async (req, res) => {
 router.patch('/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
+    if (!status) return res.status(400).json({ ok: false, error: 'status e obrigatorio' });
     const result = await pool.query(
       `UPDATE agendamentos SET status=$1, updated_at=TO_CHAR(NOW(),'YYYY-MM-DD HH24:MI:SS') WHERE id=$2 RETURNING *`,
       [status, req.params.id]
     );
+    if (!result.rows[0]) return res.status(404).json({ ok: false, error: 'Agendamento nao encontrado' });
     res.json({ ok: true, data: result.rows[0] });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
 router.delete('/:id', async (req, res) => {
   try {
-    await pool.query('DELETE FROM agendamentos WHERE id = $1', [req.params.id]);
+    const result = await pool.query('DELETE FROM agendamentos WHERE id = $1 RETURNING id', [req.params.id]);
+    if (!result.rows[0]) return res.status(404).json({ ok: false, error: 'Agendamento nao encontrado' });
     res.json({ ok: true, data: null });
   } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });

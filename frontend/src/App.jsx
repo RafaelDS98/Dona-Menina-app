@@ -12,6 +12,7 @@ import Estoque from './pages/Estoque/index.jsx';
 import Financeiro from './pages/Financeiro/index.jsx';
 import Marketing from './pages/Marketing/index.jsx';
 import Configuracoes from './pages/Configuracoes/index.jsx';
+import Diretoria from './pages/Diretoria/index.jsx';
 
 const router = createBrowserRouter([
   {
@@ -29,6 +30,7 @@ const router = createBrowserRouter([
       { path: 'financeiro', Component: Financeiro },
       { path: 'marketing', Component: Marketing },
       { path: 'configuracoes', Component: Configuracoes },
+      { path: 'diretoria', Component: Diretoria },
     ],
   },
 ]);
