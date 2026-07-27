@@ -445,33 +445,45 @@ export default function Diretoria() {
   });
   const linhasServTodas = topReceita.map(linhaServ);
   const linhasServSel = servSelecionados.map(linhaServ);
-  const linhasQtdeSel = topQtde.filter(x => selServ.ativo(x.servico)).map(x => ({
+  const linhaQtde = (x) => ({
     'Serviço': x.servico,
     'Quantidade': x.quantidade,
     '% dos atendimentos': totalQtdeServ > 0 ? round2(100 * x.quantidade / totalQtdeServ) : 0,
     'Receita (R$)': round2(x.valor_total),
-  }));
-  const linhasFormasSel = porForma.filter(x => selFormas.ativo(x.forma)).map(x => ({
+  });
+  const linhasQtdeTodas = topQtde.map(linhaQtde);
+  const linhasQtdeSel = topQtde.filter(x => selServ.ativo(x.servico)).map(linhaQtde);
+  const linhaForma = (x) => ({
+    _id: x.forma,
     'Forma de pagamento': LABEL_FORMA[x.forma] || x.forma,
     'Valor (R$)': round2(x.valor_total),
     '% do recebido (período)': totalFormas > 0 ? round2(100 * x.valor_total / totalFormas) : 0,
-  }));
+  });
+  const linhasFormasTodas = porForma.map(linhaForma);
+  const linhasFormasSel = porForma.filter(x => selFormas.ativo(x.forma)).map(x => {
+    const { _id, ...resto } = linhaForma(x);
+    return resto;
+  });
   const linhasDestino = [
     { 'Destino': 'Resultado do salão', 'Valor (R$)': round2(Math.max(0, liquido)), '% do faturamento': fat > 0 ? round2(100 * Math.max(0, liquido) / fat) : 0 },
     { 'Destino': 'Comissões', 'Valor (R$)': round2(totalComissoes), '% do faturamento': fat > 0 ? round2(100 * totalComissoes / fat) : 0 },
     { 'Destino': 'Saídas', 'Valor (R$)': round2(totSaidas), '% do faturamento': fat > 0 ? round2(100 * totSaidas / fat) : 0 },
   ];
-  const linhasColabSel = porColab.filter(x => selColab.ativo(x.colaboradora)).map(x => ({
+  const linhaColab = (x) => ({
     'Colaboradora': x.colaboradora,
     'Atendimentos': x.total_atendimentos,
     'Faturamento (R$)': round2(x.faturamento),
-  }));
-  const linhasComissoesSel = listaComissoes.filter(c => selColab.ativo(c.colaboradora?.nome)).map(c => ({
+  });
+  const linhasColabTodas = porColab.map(linhaColab);
+  const linhasColabSel = porColab.filter(x => selColab.ativo(x.colaboradora)).map(linhaColab);
+  const linhaComissao = (c) => ({
     'Colaboradora': c.colaboradora?.nome,
     'Serviços (R$)': round2(c.total_servicos_valor),
     'Comissão (R$)': round2(c.total_comissao),
     '% efetiva': Number(c.total_servicos_valor) > 0 ? round2(100 * Number(c.total_comissao) / Number(c.total_servicos_valor)) : 0,
-  }));
+  });
+  const linhasComissoesTodas = listaComissoes.map(linhaComissao);
+  const linhasComissoesSel = listaComissoes.filter(c => selColab.ativo(c.colaboradora?.nome)).map(linhaComissao);
   const linhasSaidas = saidas.map(x => ({
     'Data': x.data?.slice(0, 10),
     'Descrição': x.descricao,
@@ -622,6 +634,17 @@ export default function Diretoria() {
                 dados={topQtde.slice(0, 12).map(x => ({ id: x.servico, label: x.servico, valor: x.quantidade, cor: corServ(x.servico) }))}
               />
               <BarraSelecao sel={selServ} resumoSelecao={`${qtdeSel} execuções (${pct(qtdeSel, totalQtdeServ)} do total)`} />
+              <TabelaBusca
+                colunas={[
+                  { k: 'Serviço', label: 'Serviço' },
+                  { k: 'Quantidade', label: 'Qtde', num: true },
+                  { k: '% dos atendimentos', label: '%', num: true, fmt: fmtP },
+                ]}
+                linhas={linhasQtdeTodas}
+                sel={selServ}
+                idCol="Serviço"
+                rotulo="Ver todos os serviços"
+              />
             </Card>
 
             <Card titulo="Formas de pagamento" nota="Abatimentos não entram, seguindo a regra do app."
@@ -631,6 +654,17 @@ export default function Diretoria() {
                 dados={porForma.map((x, i) => ({ id: x.forma, label: LABEL_FORMA[x.forma] || x.forma, valor: x.valor_total, cor: CORES[i % CORES.length] }))}
               />
               <BarraSelecao sel={selFormas} resumoSelecao={`${fmtR(formasSelValor)} (${pct(formasSelValor, totalFormas)} do recebido)`} />
+              <TabelaBusca
+                colunas={[
+                  { k: 'Forma de pagamento', label: 'Forma' },
+                  { k: 'Valor (R$)', label: 'Valor', num: true, fmt: fmtR },
+                  { k: '% do recebido (período)', label: '%', num: true, fmt: fmtP },
+                ]}
+                linhas={linhasFormasTodas}
+                sel={selFormas}
+                idCol="_id"
+                rotulo="Ver tabela"
+              />
             </Card>
 
             <Card titulo="Destino da receita" nota="Como o faturamento do período se divide."
@@ -643,6 +677,15 @@ export default function Diretoria() {
                   { id: 'saidas', label: 'Saídas', valor: totSaidas, cor: CORES[2] },
                 ]}
               />
+              <TabelaBusca
+                colunas={[
+                  { k: 'Destino', label: 'Destino' },
+                  { k: 'Valor (R$)', label: 'Valor', num: true, fmt: fmtR },
+                  { k: '% do faturamento', label: '%', num: true, fmt: fmtP },
+                ]}
+                linhas={linhasDestino}
+                rotulo="Ver tabela"
+              />
             </Card>
 
             <Card titulo="Faturamento por colaboradora" nota="Seleção compartilhada com o card de comissões."
@@ -652,6 +695,17 @@ export default function Diretoria() {
                 dados={porColab.map(x => ({ id: x.colaboradora, label: x.colaboradora, valor: x.faturamento, cor: corColab(x.colaboradora) }))}
               />
               <BarraSelecao sel={selColab} resumoSelecao={`${fmtR(colabSelFat)} faturados`} />
+              <TabelaBusca
+                colunas={[
+                  { k: 'Colaboradora', label: 'Colaboradora' },
+                  { k: 'Atendimentos', label: 'Atend.', num: true },
+                  { k: 'Faturamento (R$)', label: 'Faturamento', num: true, fmt: fmtR },
+                ]}
+                linhas={linhasColabTodas}
+                sel={selColab}
+                idCol="Colaboradora"
+                rotulo="Ver tabela"
+              />
             </Card>
 
             <Card titulo="Comissões por colaboradora" nota="Comissão apurada no período."
@@ -668,7 +722,9 @@ export default function Diretoria() {
                   { k: 'Comissão (R$)', label: 'Comissão', num: true, fmt: fmtR },
                   { k: '% efetiva', label: '% efetiva', num: true, fmt: fmtP },
                 ]}
-                linhas={linhasComissoesSel}
+                linhas={linhasComissoesTodas}
+                sel={selColab}
+                idCol="Colaboradora"
                 rotulo="Ver detalhamento"
               />
             </Card>
